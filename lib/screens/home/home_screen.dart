@@ -8,6 +8,7 @@ import '../../utils/app_theme.dart';
 import '../../utils/ui_components.dart';
 import '../category/category_page.dart';
 import '../product/product_detail_page.dart';
+import '../../services/firebase_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -38,24 +39,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
             final categories = productProvider.categories;
 
-            // Get featured products (first 5 products from all categories)
-            List<ProductModel> featuredProducts = [];
-            for (var category in categories) {
-              final products =
-                  productProvider.categoryProducts[category.name] ?? [];
-              if (products.isNotEmpty) {
-                featuredProducts.addAll(products.take(2));
-                if (featuredProducts.length >= 6) break;
-              }
-            }
+            // Get featured products from provider
+            final featuredProducts = productProvider.featuredProducts;
 
             return CustomScrollView(
               slivers: [
                 // App Bar
                 SliverAppBar(
-                  floating: true,
-                  pinned: false,
                   backgroundColor: AppTheme.backgroundColor,
+                  elevation: 0,
+                  floating: true,
                   title: Text('Furniture Shop', style: AppTheme.headingMedium),
                   actions: [
                     IconButton(
@@ -64,24 +57,152 @@ class _HomeScreenState extends State<HomeScreen> {
                         // Navigate to cart
                       },
                     ),
-                  ],
-                ),
+                    // Fix Database button
+                    IconButton(
+                      icon: Icon(Icons.build_circle, color: Colors.orange),
+                      onPressed: () async {
+                        // Show loading dialog
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder:
+                              (ctx) => AlertDialog(
+                                title: Text('Fixing Database'),
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(),
+                                    SizedBox(height: 16),
+                                    Text(
+                                      'Fixing featured products in database...',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                        );
 
-                // Search Bar
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.spacing_l,
-                      vertical: AppTheme.spacing_m,
-                    ),
-                    child: CustomSearchBar(
-                      controller: _searchController,
-                      hintText: 'Search for furniture...',
-                      onChanged: (value) {
-                        // Implement search
+                        // Run fix
+                        FirebaseService firebaseService = FirebaseService();
+                        await firebaseService.fixAllProductsFeaturedStatus();
+
+                        // Force refresh the featured products
+                        await productProvider.fetchFeaturedProducts();
+
+                        // Close loading dialog
+                        Navigator.of(context).pop();
+
+                        // Show results dialog
+                        showDialog(
+                          context: context,
+                          builder:
+                              (ctx) => AlertDialog(
+                                title: Text('Database Fix Complete'),
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'All products have been checked and fixed.',
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Featured Products: ${productProvider.featuredProducts.length}',
+                                    ),
+                                    SizedBox(height: 16),
+                                    Text('What to do next:'),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      '1. Check if featured products appear now',
+                                    ),
+                                    Text(
+                                      '2. If not, try adding a new product and mark it as featured',
+                                    ),
+                                    Text(
+                                      '3. Restart the app to refresh all data',
+                                    ),
+                                  ],
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.of(ctx).pop(),
+                                    child: Text('OK'),
+                                  ),
+                                ],
+                              ),
+                        );
                       },
                     ),
-                  ),
+                    // Debug button
+                    IconButton(
+                      icon: Icon(Icons.bug_report, color: Colors.red),
+                      onPressed: () async {
+                        // Show loading dialog
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder:
+                              (ctx) => AlertDialog(
+                                title: Text('Debugging Products'),
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(),
+                                    SizedBox(height: 16),
+                                    Text('Checking products in database...'),
+                                  ],
+                                ),
+                              ),
+                        );
+
+                        // Run debug function
+                        await productProvider.debugCheckProducts();
+
+                        // Force refresh the featured products
+                        await productProvider.fetchFeaturedProducts();
+
+                        // Close loading dialog
+                        Navigator.of(context).pop();
+
+                        // Show results dialog
+                        showDialog(
+                          context: context,
+                          builder:
+                              (ctx) => AlertDialog(
+                                title: Text('Featured Products Debug'),
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Debug complete! Check console output.',
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Featured Products: ${productProvider.featuredProducts.length}',
+                                    ),
+                                    SizedBox(height: 16),
+                                    Text('If you still don\'t see products:'),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      '1. Make sure products are marked as "Featured"',
+                                    ),
+                                    Text(
+                                      '2. Try adding a new product and mark it as featured',
+                                    ),
+                                    Text(
+                                      '3. Restart the app after adding products',
+                                    ),
+                                  ],
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.of(ctx).pop(),
+                                    child: Text('OK'),
+                                  ),
+                                ],
+                              ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
 
                 // Welcome Message
@@ -134,8 +255,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         featuredProducts.isEmpty
                             ? Center(
                               child: Text(
-                                'No featured products found',
+                                'No featured products found. Mark products as featured in the admin panel.',
                                 style: AppTheme.bodyMedium,
+                                textAlign: TextAlign.center,
                               ),
                             )
                             : ListView.builder(

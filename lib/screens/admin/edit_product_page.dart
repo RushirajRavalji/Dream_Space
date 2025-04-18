@@ -1,11 +1,15 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import '../../models/category_model.dart';
 import '../../models/product_model.dart';
+import '../../providers/product_provider.dart';
 import '../../utils/app_theme.dart';
+import '../../utils/image_utils.dart';
+import '../../services/firebase_service.dart';
+import '../../components/firebase_base64_image.dart';
 
 class EditProductPage extends StatefulWidget {
   final ProductModel product;
@@ -36,7 +40,7 @@ class _EditProductPageState extends State<EditProductPage> {
 
   // Form values
   String? _selectedCategory;
-  List<String> _imageUrls = [];
+  List<String> _imageUrls = []; // These are now base64 image IDs in Firestore
   List<File> _newImages = [];
   bool _isAvailable = true;
   bool _isFeatured = false;
@@ -208,6 +212,15 @@ class _EditProductPageState extends State<EditProductPage> {
           }
           _hasChangedImages = true;
         });
+
+        // Show feedback to user
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Added ${pickedFiles.length} images'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
       _showErrorDialog('Error picking images: ${e.toString()}');
@@ -217,13 +230,25 @@ class _EditProductPageState extends State<EditProductPage> {
   Future<void> _takePhoto() async {
     try {
       final ImagePicker picker = ImagePicker();
-      final XFile? photo = await picker.pickImage(source: ImageSource.camera);
+      final XFile? photo = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80, // Compress image to reduce file size
+      );
 
       if (photo != null) {
         setState(() {
           _newImages.add(File(photo.path));
           _hasChangedImages = true;
         });
+
+        // Show feedback to user
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Added photo from camera'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
       _showErrorDialog('Error taking photo: ${e.toString()}');
@@ -231,24 +256,60 @@ class _EditProductPageState extends State<EditProductPage> {
   }
 
   Future<List<String>> _uploadNewImages() async {
-    List<String> uploadedUrls = [];
+    List<String> imageIds = [];
+    FirebaseService firebaseService = FirebaseService();
 
     try {
       for (int i = 0; i < _newImages.length; i++) {
-        final storageRef = FirebaseStorage.instance
-            .ref()
-            .child('product_images')
-            .child('${DateTime.now().millisecondsSinceEpoch}_$i.jpg');
+        try {
+          setState(() {
+            _isLoading = true;
+          });
 
-        await storageRef.putFile(_newImages[i]);
-        final downloadUrl = await storageRef.getDownloadURL();
-        uploadedUrls.add(downloadUrl);
+          // Indicate which image is being processed
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Processing image ${i + 1} of ${_newImages.length}...',
+              ),
+              duration: Duration(seconds: 1),
+            ),
+          );
+
+          // Convert image to base64
+          String base64Image = await ImageUtils.fileToBase64(_newImages[i]);
+
+          // Upload base64 image to Firestore
+          String imageId = await firebaseService.uploadBase64Image(
+            base64Image,
+            'product_images',
+          );
+          imageIds.add(imageId);
+        } catch (imageError) {
+          // Log the error but continue with other images
+          print('Error processing image $i: $imageError');
+
+          // Show a snackbar about the error
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error with image ${i + 1}. Skipping...'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+
+          // If we couldn't process any images, eventually throw an error
+          if (i == _newImages.length - 1 && imageIds.isEmpty) {
+            throw Exception(
+              'Failed to process any images. Try with smaller images.',
+            );
+          }
+        }
       }
+
+      return imageIds;
     } catch (e) {
       throw Exception('Failed to upload images: ${e.toString()}');
     }
-
-    return uploadedUrls;
   }
 
   void _removeExistingImage(int index) {
@@ -256,12 +317,32 @@ class _EditProductPageState extends State<EditProductPage> {
       _imageUrls.removeAt(index);
       _hasChangedImages = true;
     });
+
+    // Provide feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Existing image removed'),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 1),
+      ),
+    );
   }
 
   void _removeNewImage(int index) {
     setState(() {
       _newImages.removeAt(index);
+      // We've changed images if we had new images at all
+      _hasChangedImages = true;
     });
+
+    // Provide feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('New image removed'),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 1),
+      ),
+    );
   }
 
   Future<void> _updateProduct() async {
@@ -279,11 +360,19 @@ class _EditProductPageState extends State<EditProductPage> {
       setState(() => _isLoading = true);
 
       try {
-        // Only upload new images if they exist
+        // Only upload new images if they exist and changes were made
         List<String> allImageUrls = List.from(_imageUrls);
         if (_newImages.isNotEmpty) {
-          final newUploadedUrls = await _uploadNewImages();
-          allImageUrls.addAll(newUploadedUrls);
+          // Show general processing message
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Processing images...'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+
+          final newUploadedIds = await _uploadNewImages();
+          allImageUrls.addAll(newUploadedIds);
         }
 
         // Create specifications map
@@ -314,19 +403,19 @@ class _EditProductPageState extends State<EditProductPage> {
             .collection('products')
             .doc(widget.product.id);
 
-        // Create updated product model
-        final updatedProduct = ProductModel(
-          id: widget.product.id,
-          name: _nameController.text,
-          description: _descriptionController.text,
-          price: double.parse(_priceController.text),
-          category: _selectedCategory!,
-          imageUrls: allImageUrls,
-          isAvailable: _isAvailable,
-          rating: widget.product.rating,
-          reviewCount: widget.product.reviewCount,
-          specifications: specifications,
-          dimensions: {
+        // Create a direct map for updating to ensure all fields are set properly
+        final Map<String, dynamic> productData = {
+          'id': widget.product.id,
+          'name': _nameController.text,
+          'description': _descriptionController.text,
+          'price': double.parse(_priceController.text),
+          'category': _selectedCategory!,
+          'imageUrls': allImageUrls,
+          'isAvailable': _isAvailable,
+          'rating': widget.product.rating,
+          'reviewCount': widget.product.reviewCount,
+          'specifications': specifications,
+          'dimensions': {
             'width':
                 _widthController.text.isEmpty
                     ? null
@@ -340,30 +429,52 @@ class _EditProductPageState extends State<EditProductPage> {
                     ? null
                     : double.parse(_depthController.text),
           },
-          colors: _selectedColors.isNotEmpty ? _selectedColors : null,
-          materials: _selectedMaterials.isNotEmpty ? _selectedMaterials : null,
-          brand: _brandController.text.isEmpty ? null : _brandController.text,
-          discountPrice:
+          'colors': _selectedColors.isNotEmpty ? _selectedColors : null,
+          'materials':
+              _selectedMaterials.isNotEmpty ? _selectedMaterials : null,
+          'brand': _brandController.text.isEmpty ? null : _brandController.text,
+          'discountPrice':
               _discountPriceController.text.isEmpty
                   ? null
                   : double.parse(_discountPriceController.text),
-          stockQuantity:
+          'stockQuantity':
               _stockController.text.isEmpty
                   ? null
                   : int.parse(_stockController.text),
-          isFeatured: _isFeatured,
-          createdAt: widget.product.createdAt,
-          updatedAt: DateTime.now(),
-        );
+          'isFeatured': _isFeatured,
+          'createdAt':
+              widget.product.createdAt is Timestamp
+                  ? widget.product.createdAt
+                  : Timestamp.fromDate(widget.product.createdAt),
+          'updatedAt': Timestamp.now(),
+        };
 
-        // Save to Firestore
-        await productRef.update(updatedProduct.toMap());
+        // Save directly to Firestore
+        await productRef.update(productData);
+
+        // Debug log
+        print('Updated product with isFeatured: $_isFeatured');
+
+        // Refresh products in the provider
+        final productProvider = Provider.of<ProductProvider>(
+          context,
+          listen: false,
+        );
+        await productProvider.refreshProductsAfterAdd(
+          _selectedCategory!,
+          _isFeatured,
+        );
 
         setState(() => _isLoading = false);
 
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Product updated successfully')),
+          const SnackBar(
+            content: Text(
+              'Product updated successfully and is now visible in the store!',
+            ),
+            backgroundColor: Colors.green,
+          ),
         );
 
         // Go back to previous screen
@@ -743,6 +854,34 @@ class _EditProductPageState extends State<EditProductPage> {
                         ],
                       ),
 
+                      // No Images Message
+                      if (_imageUrls.isEmpty && _newImages.isEmpty) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.yellow[100],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.amber),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.amber,
+                              ),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Please add at least one product image',
+                                  style: TextStyle(color: Colors.amber),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
                       // Existing Images
                       if (_imageUrls.isNotEmpty) ...[
                         const SizedBox(height: 16),
@@ -771,32 +910,28 @@ class _EditProductPageState extends State<EditProductPage> {
                                     ),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
-                                      child: Image.network(
-                                        _imageUrls[index],
+                                      child: FirebaseBase64Image(
+                                        imageId: _imageUrls[index],
                                         height: 120,
                                         width: 120,
                                         fit: BoxFit.cover,
-                                        loadingBuilder: (
-                                          context,
-                                          child,
-                                          loadingProgress,
-                                        ) {
-                                          if (loadingProgress == null)
-                                            return child;
-                                          return Center(
-                                            child: CircularProgressIndicator(
-                                              value:
-                                                  loadingProgress
-                                                              .expectedTotalBytes !=
-                                                          null
-                                                      ? loadingProgress
-                                                              .cumulativeBytesLoaded /
-                                                          loadingProgress
-                                                              .expectedTotalBytes!
-                                                      : null,
-                                            ),
-                                          );
-                                        },
+                                        placeholder: Container(
+                                          height: 120,
+                                          width: 120,
+                                          color: Colors.grey[300],
+                                          child: const Center(
+                                            child: CircularProgressIndicator(),
+                                          ),
+                                        ),
+                                        errorWidget: Container(
+                                          height: 120,
+                                          width: 120,
+                                          color: Colors.grey[300],
+                                          child: const Icon(
+                                            Icons.broken_image,
+                                            color: Colors.white,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),

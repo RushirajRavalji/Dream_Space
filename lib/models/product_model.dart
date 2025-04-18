@@ -6,7 +6,8 @@ class ProductModel {
   final String description;
   final double price;
   final String category;
-  final List<String> imageUrls;
+  final List<String>
+  imageUrls; // These are now Firestore document IDs for base64 images
   final bool isAvailable;
   final double rating;
   final int reviewCount;

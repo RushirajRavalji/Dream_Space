@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'app_theme.dart';
+import '../components/firebase_base64_image.dart';
 
 // Premium Button with gradient background
 class PremiumButton extends StatelessWidget {
@@ -121,11 +122,27 @@ class ProductCard extends StatelessWidget {
                     topLeft: Radius.circular(AppTheme.borderRadius_m),
                     topRight: Radius.circular(AppTheme.borderRadius_m),
                   ),
-                  child: Image.asset(
-                    imageUrl,
+                  child: FirebaseBase64Image(
+                    imageId: imageUrl,
                     height: 150,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    placeholder: Container(
+                      height: 150,
+                      width: double.infinity,
+                      color: Colors.grey[200],
+                      child: const Center(child: CircularProgressIndicator()),
+                    ),
+                    errorWidget: Container(
+                      height: 150,
+                      width: double.infinity,
+                      color: Colors.grey[200],
+                      child: Icon(
+                        Icons.image_not_supported,
+                        color: Colors.grey[400],
+                        size: 50,
+                      ),
+                    ),
                   ),
                 ),
                 Positioned(
@@ -243,7 +260,25 @@ class CategoryItem extends StatelessWidget {
                 ],
               ),
               child: Center(
-                child: Image.asset(imagePath, height: 70, width: 70),
+                child:
+                    imagePath.startsWith('assets/')
+                        ? Image.asset(imagePath, height: 70, width: 70)
+                        : FirebaseBase64Image(
+                          imageId: imagePath,
+                          height: 70,
+                          width: 70,
+                          fit: BoxFit.contain,
+                          placeholder: const SizedBox(
+                            height: 70,
+                            width: 70,
+                            child: Center(child: CircularProgressIndicator()),
+                          ),
+                          errorWidget: Icon(
+                            Icons.category,
+                            size: 70,
+                            color: color.withOpacity(0.5),
+                          ),
+                        ),
               ),
             ),
             const SizedBox(height: AppTheme.spacing_s),
@@ -343,11 +378,7 @@ class PremiumSearchBar extends StatelessWidget {
   final String hintText;
   final Function(String)? onChanged;
 
-  const PremiumSearchBar({
-    super.key,
-    required this.hintText,
-    this.onChanged,
-  });
+  const PremiumSearchBar({super.key, required this.hintText, this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -482,7 +513,23 @@ class CategoryCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: Center(child: Image.asset(imageUrl, fit: BoxFit.contain)),
+              child: Center(
+                child:
+                    imageUrl.startsWith('assets/')
+                        ? Image.asset(imageUrl, fit: BoxFit.contain)
+                        : FirebaseBase64Image(
+                          imageId: imageUrl,
+                          fit: BoxFit.contain,
+                          placeholder: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(color),
+                          ),
+                          errorWidget: Icon(
+                            Icons.category,
+                            size: 64,
+                            color: color.withOpacity(0.5),
+                          ),
+                        ),
+              ),
             ),
             SizedBox(height: AppTheme.spacing_s),
             Text(

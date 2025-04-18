@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../utils/app_theme.dart';
+import '../../utils/asset_uploader.dart';
+import '../../providers/product_provider.dart';
 import 'add_product_page.dart';
 import 'manage_products_page.dart';
 import 'manage_categories_page.dart';
@@ -14,6 +17,8 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   int _selectedIndex = 0;
+  final AssetUploader _assetUploader = AssetUploader();
+  bool _assetsUploading = false;
 
   final List<Widget> _pages = [
     const AdminHome(),
@@ -35,6 +40,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
         backgroundColor: AppTheme.primaryColor,
         foregroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh Product Listings',
+            onPressed: () => _refreshProductListings(context),
+          ),
+          IconButton(
+            icon: const Icon(Icons.cloud_upload),
+            tooltip: 'Upload All Assets',
+            onPressed:
+                _assetsUploading ? null : () => _uploadAllAssets(context),
+          ),
+        ],
       ),
       drawer: Drawer(
         child: ListView(
@@ -141,6 +159,59 @@ class _AdminDashboardState extends State<AdminDashboard> {
         Navigator.pop(context);
       },
     );
+  }
+
+  Future<void> _uploadAllAssets(BuildContext context) async {
+    setState(() => _assetsUploading = true);
+
+    try {
+      await _assetUploader.uploadAllAssets(context);
+    } finally {
+      setState(() => _assetsUploading = false);
+    }
+  }
+
+  Future<void> _refreshProductListings(BuildContext context) async {
+    final productProvider = Provider.of<ProductProvider>(
+      context,
+      listen: false,
+    );
+
+    // Show loading snackbar
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Refreshing product listings...'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    try {
+      // Refresh categories
+      await productProvider.fetchCategories();
+
+      // Refresh products for each category
+      for (var category in productProvider.categories) {
+        await productProvider.fetchProductsByCategory(category.name);
+      }
+
+      // Refresh featured products
+      await productProvider.fetchFeaturedProducts();
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Product listings refreshed successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error refreshing listings: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
 

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -35,12 +36,12 @@ class FirebaseService {
   Future<bool> checkConnectivity() async {
     try {
       var connectivityResult = await Connectivity().checkConnectivity();
-      
+
       // With newer connectivity_plus, connectivityResult might be a list
       if (connectivityResult is List) {
         // If it's a list, check if any result indicates connectivity
-        return connectivityResult.isNotEmpty && 
-               connectivityResult.first != ConnectivityResult.none;
+        return connectivityResult.isNotEmpty &&
+            connectivityResult.first != ConnectivityResult.none;
       } else {
         // Legacy behavior
         return connectivityResult != ConnectivityResult.none;
@@ -78,7 +79,9 @@ class FirebaseService {
 
       // Safety check
       if (result.user == null) {
-        throw Exception('User registration failed: User is null after registration');
+        throw Exception(
+          'User registration failed: User is null after registration',
+        );
       }
 
       // Update display name
@@ -100,7 +103,7 @@ class FirebaseService {
     } on FirebaseAuthException catch (e) {
       // Throw more user-friendly error messages
       String message = 'Registration failed';
-      
+
       switch (e.code) {
         case 'email-already-in-use':
           message = 'This email address is already in use';
@@ -117,7 +120,7 @@ class FirebaseService {
         default:
           message = 'Registration error: ${e.message}';
       }
-      
+
       throw Exception(message);
     } catch (e) {
       throw Exception('Registration error: ${e.toString()}');
@@ -125,16 +128,21 @@ class FirebaseService {
   }
 
   // Save user data with retry mechanism
-  Future<void> _saveUserDataWithRetry(String uid, Map<String, dynamic> userData) async {
+  Future<void> _saveUserDataWithRetry(
+    String uid,
+    Map<String, dynamic> userData,
+  ) async {
     int maxRetries = 3;
-    
+
     for (int i = 0; i < maxRetries; i++) {
       try {
         await _usersCollection.doc(uid).set(userData);
         return;
       } catch (e) {
         if (i == maxRetries - 1) {
-          throw Exception('Failed to save user data to Firestore after multiple attempts');
+          throw Exception(
+            'Failed to save user data to Firestore after multiple attempts',
+          );
         }
         // Wait a bit before retrying
         await Future.delayed(Duration(seconds: 1));
@@ -151,14 +159,16 @@ class FirebaseService {
       // Check connectivity first
       bool isConnected = await checkConnectivity();
       if (!isConnected) {
-        throw Exception('No internet connection. Please check your network settings and try again.');
+        throw Exception(
+          'No internet connection. Please check your network settings and try again.',
+        );
       }
-      
+
       final result = await _auth.signInWithEmailAndPassword(
-        email: email, 
-        password: password
+        email: email,
+        password: password,
       );
-      
+
       // Safety check
       if (result.user == null) {
         throw Exception('Login failed: User is null after login');
@@ -168,7 +178,7 @@ class FirebaseService {
     } on FirebaseAuthException catch (e) {
       // Throw more user-friendly error messages
       String message = 'Login failed';
-      
+
       switch (e.code) {
         case 'invalid-email':
           message = 'The email address is not valid';
@@ -185,7 +195,7 @@ class FirebaseService {
         default:
           message = 'Login error: ${e.message}';
       }
-      
+
       throw Exception(message);
     } catch (e) {
       throw Exception('Login error: ${e.toString()}');
@@ -196,7 +206,7 @@ class FirebaseService {
   Future<void> logout() async {
     int retries = 0;
     Exception? lastError;
-    
+
     while (retries < 3) {
       try {
         await _auth.signOut();
@@ -207,7 +217,7 @@ class FirebaseService {
         await Future.delayed(Duration(milliseconds: 500)); // Wait before retry
       }
     }
-    
+
     // If we got here, all retries failed
     throw lastError ?? Exception('Logout failed after multiple attempts');
   }
@@ -236,7 +246,7 @@ class FirebaseService {
       while (retries < 3 && (userDoc == null || !userDoc.exists)) {
         try {
           userDoc = await _usersCollection.doc(user.uid).get();
-          
+
           if (!userDoc.exists) {
             // Create a basic user document if it doesn't exist
             UserModel newUser = UserModel(
@@ -246,12 +256,12 @@ class FirebaseService {
               wishlist: [],
               createdAt: DateTime.now(),
             );
-            
+
             await _usersCollection.doc(user.uid).set(newUser.toMap());
             // Fetch the document again
             userDoc = await _usersCollection.doc(user.uid).get();
           }
-          
+
           break; // Success, exit the retry loop
         } catch (e) {
           retries++;
@@ -259,7 +269,7 @@ class FirebaseService {
           await Future.delayed(Duration(seconds: 1)); // Wait before retry
         }
       }
-      
+
       if (userDoc == null || !userDoc.exists) {
         throw Exception('Failed to get user data after multiple attempts');
       }
@@ -388,6 +398,80 @@ class FirebaseService {
           .map((doc) => ProductModel.fromFirestore(doc))
           .toList();
     } catch (e) {
+      return [];
+    }
+  }
+
+  // Get featured products
+  Future<List<ProductModel>> getFeaturedProducts() async {
+    try {
+      print("TRYING TO GET FEATURED PRODUCTS");
+
+      // First, get all products to check them
+      final allProducts = await _productsCollection.get();
+      print("Total products found: ${allProducts.docs.length}");
+
+      // Debug output for all products
+      for (var doc in allProducts.docs) {
+        final data = doc.data() as Map<String, dynamic>?;
+        if (data != null) {
+          print(
+            "Product: ${data['name'] ?? 'Unknown'} | isFeatured: ${data['isFeatured']} | Type: ${data['isFeatured']?.runtimeType}",
+          );
+        }
+      }
+
+      // Try multiple query approaches to catch type mismatches
+      List<ProductModel> featuredProducts = [];
+
+      // Approach 1: Boolean true
+      final querySnapshotBool =
+          await _productsCollection.where('isFeatured', isEqualTo: true).get();
+      print("Boolean query found: ${querySnapshotBool.docs.length}");
+
+      // Approach 2: String "true"
+      final querySnapshotString =
+          await _productsCollection
+              .where('isFeatured', isEqualTo: "true")
+              .get();
+      print("String query found: ${querySnapshotString.docs.length}");
+
+      // Add both results (will handle duplicates later)
+      for (var doc in querySnapshotBool.docs) {
+        featuredProducts.add(ProductModel.fromFirestore(doc));
+      }
+
+      for (var doc in querySnapshotString.docs) {
+        final model = ProductModel.fromFirestore(doc);
+        if (!featuredProducts.any((p) => p.id == model.id)) {
+          featuredProducts.add(model);
+        }
+      }
+
+      // If still no products, check all products and manually filter for isFeatured
+      if (featuredProducts.isEmpty) {
+        for (var doc in allProducts.docs) {
+          final data = doc.data() as Map<String, dynamic>?;
+          if (data != null) {
+            final isFeatured = data['isFeatured'];
+
+            // Try various types of "true" values
+            if (isFeatured == true ||
+                isFeatured == "true" ||
+                isFeatured == 1 ||
+                isFeatured == "1") {
+              final model = ProductModel.fromFirestore(doc);
+              featuredProducts.add(model);
+            }
+          }
+        }
+      }
+
+      print("Final featured products count: ${featuredProducts.length}");
+
+      return featuredProducts;
+    } catch (e) {
+      print("Error getting featured products: $e");
       return [];
     }
   }
@@ -555,6 +639,238 @@ class FirebaseService {
     // Add products to Firestore
     for (var product in products) {
       await _productsCollection.add(product);
+    }
+  }
+
+  // Upload base64 image to Firestore
+  Future<String> uploadBase64Image(
+    String base64Image,
+    String collectionName,
+  ) async {
+    try {
+      bool isConnected = await checkConnectivity();
+      if (!isConnected) {
+        throw Exception(
+          'No internet connection. Please check your network settings.',
+        );
+      }
+
+      // Create a unique ID for the image
+      String imageId = const Uuid().v4();
+
+      // Check if base64 string is too large for a single document (Firestore limit is 1MB)
+      // Split into chunks if needed
+      const int maxChunkSize = 750000; // Safely under 1MB limit
+
+      if (base64Image.length > maxChunkSize) {
+        // Create a reference document that points to the chunks
+        await _firestore.collection(collectionName).doc(imageId).set({
+          'id': imageId,
+          'type': 'chunked',
+          'totalChunks': (base64Image.length / maxChunkSize).ceil(),
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
+        // Split the base64 string into chunks and store each chunk
+        int totalChunks = (base64Image.length / maxChunkSize).ceil();
+        for (int i = 0; i < totalChunks; i++) {
+          int start = i * maxChunkSize;
+          int end = (i + 1) * maxChunkSize;
+          if (end > base64Image.length) end = base64Image.length;
+
+          String chunk = base64Image.substring(start, end);
+
+          await _firestore
+              .collection('${collectionName}_chunks')
+              .doc('${imageId}_$i')
+              .set({
+                'imageId': imageId,
+                'chunkIndex': i,
+                'data': chunk,
+                'createdAt': FieldValue.serverTimestamp(),
+              });
+        }
+      } else {
+        // Store the base64 image in a single document
+        await _firestore.collection(collectionName).doc(imageId).set({
+          'id': imageId,
+          'type': 'single',
+          'base64': base64Image,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      return imageId;
+    } catch (e) {
+      throw Exception('Failed to upload base64 image: ${e.toString()}');
+    }
+  }
+
+  // Get base64 image from Firestore
+  Future<String> getBase64Image(String imageId, String collectionName) async {
+    try {
+      DocumentSnapshot doc =
+          await _firestore.collection(collectionName).doc(imageId).get();
+
+      if (!doc.exists) {
+        throw Exception('Image not found');
+      }
+
+      Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+
+      // Check if the image is stored as chunks
+      if (data['type'] == 'chunked') {
+        // Reconstruct from chunks
+        int totalChunks = data['totalChunks'];
+        String fullBase64 = '';
+
+        for (int i = 0; i < totalChunks; i++) {
+          DocumentSnapshot chunkDoc =
+              await _firestore
+                  .collection('${collectionName}_chunks')
+                  .doc('${imageId}_$i')
+                  .get();
+
+          if (!chunkDoc.exists) {
+            throw Exception('Image chunk not found');
+          }
+
+          Map<String, dynamic> chunkData =
+              chunkDoc.data() as Map<String, dynamic>;
+          fullBase64 += chunkData['data'];
+        }
+
+        return fullBase64;
+      } else {
+        // Single document storage
+        return data['base64'] as String;
+      }
+    } catch (e) {
+      throw Exception('Failed to get base64 image: ${e.toString()}');
+    }
+  }
+
+  // Convert assets to base64 and upload to Firestore
+  Future<List<String>> uploadAssetImagesToFirebase(
+    List<String> assetPaths,
+  ) async {
+    try {
+      List<String> imageIds = [];
+
+      for (String assetPath in assetPaths) {
+        String base64Image = await _convertAssetToBase64(assetPath);
+        String imageId = await uploadBase64Image(base64Image, 'product_images');
+        imageIds.add(imageId);
+      }
+
+      return imageIds;
+    } catch (e) {
+      throw Exception('Failed to upload asset images: ${e.toString()}');
+    }
+  }
+
+  // Helper method to convert asset to base64
+  Future<String> _convertAssetToBase64(String assetPath) async {
+    try {
+      ByteData data = await rootBundle.load(assetPath);
+      List<int> bytes = data.buffer.asUint8List();
+      return base64Encode(bytes);
+    } catch (e) {
+      throw Exception('Failed to convert asset to base64: ${e.toString()}');
+    }
+  }
+
+  // Upload multiple base64 images and return their IDs
+  Future<List<String>> uploadMultipleBase64Images(
+    List<String> base64Images,
+  ) async {
+    List<String> imageIds = [];
+
+    for (String base64Image in base64Images) {
+      String imageId = await uploadBase64Image(base64Image, 'product_images');
+      imageIds.add(imageId);
+    }
+
+    return imageIds;
+  }
+
+  // Fix all products to ensure their isFeatured field is a boolean
+  Future<void> fixAllProductsFeaturedStatus() async {
+    try {
+      print("Starting database fix for featured products...");
+
+      // Get all products
+      final querySnapshot = await _productsCollection.get();
+      print("Found ${querySnapshot.docs.length} products to check");
+
+      int fixedCount = 0;
+
+      // Check each product
+      for (var doc in querySnapshot.docs) {
+        try {
+          final docData = doc.data() as Map<String, dynamic>?;
+          if (docData != null) {
+            // Print raw data for debugging
+            print("Doc ${doc.id} raw data: $docData");
+
+            final dynamic isFeatured =
+                docData.containsKey('isFeatured')
+                    ? docData['isFeatured']
+                    : false;
+            print(
+              "Doc ${doc.id} isFeatured value: $isFeatured (type: ${isFeatured?.runtimeType})",
+            );
+
+            // Always fix every product (more aggressive approach)
+            bool featuredValue;
+
+            // Determine featured value based on current data
+            if (isFeatured == true ||
+                isFeatured == "true" ||
+                isFeatured == 1 ||
+                isFeatured == "1" ||
+                isFeatured == "yes") {
+              featuredValue = true;
+            } else {
+              featuredValue = false;
+            }
+
+            // Always update with boolean value
+            print(
+              "Updating product ${doc.id} (${docData['name'] ?? 'unknown'}) - setting isFeatured to $featuredValue",
+            );
+            await _productsCollection.doc(doc.id).update({
+              'isFeatured': featuredValue,
+            });
+
+            fixedCount++;
+          }
+        } catch (docError) {
+          print("Error processing document ${doc.id}: $docError");
+        }
+      }
+
+      print("Database fix complete. Fixed $fixedCount products.");
+
+      // Run a check after fixing
+      final checkSnapshot =
+          await _productsCollection.where('isFeatured', isEqualTo: true).get();
+      print(
+        "After fix: Found ${checkSnapshot.docs.length} products with isFeatured=true",
+      );
+
+      // List featured products for verification
+      for (var doc in checkSnapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>?;
+        if (data != null) {
+          print("Featured product: ${data['name'] ?? doc.id}");
+        }
+      }
+
+      return;
+    } catch (e) {
+      print("Error fixing products: $e");
+      return;
     }
   }
 }

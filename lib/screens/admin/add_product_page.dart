@@ -1,11 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import '../../models/category_model.dart';
 import '../../models/product_model.dart';
+import '../../providers/product_provider.dart';
 import '../../utils/app_theme.dart';
+import '../../utils/image_utils.dart';
+import '../../services/firebase_service.dart';
 
 class AddProductPage extends StatefulWidget {
   const AddProductPage({super.key});
@@ -161,24 +164,60 @@ class _AddProductPageState extends State<AddProductPage> {
   }
 
   Future<List<String>> _uploadImages() async {
-    List<String> uploadedUrls = [];
+    List<String> imageIds = [];
+    FirebaseService firebaseService = FirebaseService();
 
     try {
       for (int i = 0; i < _images.length; i++) {
-        final storageRef = FirebaseStorage.instance
-            .ref()
-            .child('product_images')
-            .child('${DateTime.now().millisecondsSinceEpoch}_$i.jpg');
+        try {
+          setState(() {
+            _isLoading = true;
+          });
 
-        await storageRef.putFile(_images[i]);
-        final downloadUrl = await storageRef.getDownloadURL();
-        uploadedUrls.add(downloadUrl);
+          // Indicate which image is being processed
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Processing image ${i + 1} of ${_images.length}...',
+              ),
+              duration: Duration(seconds: 1),
+            ),
+          );
+
+          // Convert image to base64
+          String base64Image = await ImageUtils.fileToBase64(_images[i]);
+
+          // Upload base64 image to Firestore
+          String imageId = await firebaseService.uploadBase64Image(
+            base64Image,
+            'product_images',
+          );
+          imageIds.add(imageId);
+        } catch (imageError) {
+          // Log the error but continue with other images
+          print('Error processing image $i: $imageError');
+
+          // Show a snackbar about the error
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error with image ${i + 1}. Skipping...'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+
+          // If we couldn't process any images, eventually throw an error
+          if (i == _images.length - 1 && imageIds.isEmpty) {
+            throw Exception(
+              'Failed to process any images. Try with smaller images.',
+            );
+          }
+        }
       }
+
+      return imageIds;
     } catch (e) {
       throw Exception('Failed to upload images: ${e.toString()}');
     }
-
-    return uploadedUrls;
   }
 
   Future<void> _submitProduct() async {
@@ -197,7 +236,7 @@ class _AddProductPageState extends State<AddProductPage> {
 
       try {
         // Upload images
-        final imageUrls = await _uploadImages();
+        final imageIds = await _uploadImages();
 
         // Create specifications map
         final specifications = {
@@ -226,19 +265,19 @@ class _AddProductPageState extends State<AddProductPage> {
         final productsRef = FirebaseFirestore.instance.collection('products');
         final newProductRef = productsRef.doc();
 
-        // Create product model
-        final product = ProductModel(
-          id: newProductRef.id,
-          name: _nameController.text,
-          description: _descriptionController.text,
-          price: double.parse(_priceController.text),
-          category: _selectedCategory!,
-          imageUrls: imageUrls,
-          isAvailable: _isAvailable,
-          rating: 0.0,
-          reviewCount: 0,
-          specifications: specifications,
-          dimensions: {
+        // Create product data map directly to ensure all fields are properly set
+        final Map<String, dynamic> productData = {
+          'id': newProductRef.id,
+          'name': _nameController.text,
+          'description': _descriptionController.text,
+          'price': double.parse(_priceController.text),
+          'category': _selectedCategory!,
+          'imageUrls': imageIds,
+          'isAvailable': _isAvailable,
+          'rating': 0.0,
+          'reviewCount': 0,
+          'specifications': specifications,
+          'dimensions': {
             'width':
                 _widthController.text.isEmpty
                     ? null
@@ -252,29 +291,48 @@ class _AddProductPageState extends State<AddProductPage> {
                     ? null
                     : double.parse(_depthController.text),
           },
-          colors: _selectedColors.isNotEmpty ? _selectedColors : null,
-          materials: _selectedMaterials.isNotEmpty ? _selectedMaterials : null,
-          brand: _brandController.text.isEmpty ? null : _brandController.text,
-          discountPrice:
+          'colors': _selectedColors.isNotEmpty ? _selectedColors : null,
+          'materials':
+              _selectedMaterials.isNotEmpty ? _selectedMaterials : null,
+          'brand': _brandController.text.isEmpty ? null : _brandController.text,
+          'discountPrice':
               _discountPriceController.text.isEmpty
                   ? null
                   : double.parse(_discountPriceController.text),
-          stockQuantity:
+          'stockQuantity':
               _stockController.text.isEmpty
                   ? null
                   : int.parse(_stockController.text),
-          isFeatured: _isFeatured,
-          createdAt: DateTime.now(),
-        );
+          'isFeatured': _isFeatured,
+          'createdAt': Timestamp.now(),
+        };
 
-        // Save to Firestore
-        await newProductRef.set(product.toMap());
+        // Save to Firestore directly with the map
+        await newProductRef.set(productData);
+
+        // Debug log
+        print('Added product with isFeatured: $_isFeatured');
+
+        // Refresh products in the provider
+        final productProvider = Provider.of<ProductProvider>(
+          context,
+          listen: false,
+        );
+        await productProvider.refreshProductsAfterAdd(
+          _selectedCategory!,
+          _isFeatured,
+        );
 
         setState(() => _isLoading = false);
 
         // Show success and reset form
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Product added successfully')),
+          const SnackBar(
+            content: Text(
+              'Product added successfully and now visible in your store!',
+            ),
+            backgroundColor: Colors.green,
+          ),
         );
         _resetForm();
       } catch (e) {

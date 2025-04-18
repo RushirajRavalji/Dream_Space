@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/product_provider.dart';
 import '../../utils/app_theme.dart';
 import '../../utils/ui_components.dart';
+import '../../components/firebase_base64_image.dart';
 
 class ProductDetailPage extends StatefulWidget {
   final String productId;
@@ -118,7 +119,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           flexibleSpace: FlexibleSpaceBar(
             background:
                 product.imageUrls.isNotEmpty
-                    ? Image.asset(product.imageUrls.first, fit: BoxFit.cover)
+                    ? FirebaseBase64Image(
+                      imageId: product.imageUrls.first,
+                      fit: BoxFit.cover,
+                    )
                     : Container(
                       color: AppTheme.dividerColor,
                       child: Icon(
