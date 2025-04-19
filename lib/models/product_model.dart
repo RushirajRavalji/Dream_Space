@@ -9,8 +9,7 @@ class ProductModel {
   final String description;
   final double price;
   final String category;
-  final List<String>
-  imageUrls; // These are now Firestore document IDs for base64 images
+  final List<String> imageUrls;
   final bool isAvailable;
   final double rating;
   final int reviewCount;
@@ -46,6 +45,114 @@ class ProductModel {
     required this.createdAt,
     this.updatedAt,
   });
+
+  factory ProductModel.fromFirestore(DocumentSnapshot doc) {
+    try {
+      final data = doc.data() as Map<String, dynamic>;
+
+      // Validate required fields
+      if (data['name'] == null ||
+          data['description'] == null ||
+          data['price'] == null ||
+          data['category'] == null) {
+        throw Exception('Missing required fields in product document');
+      }
+
+      // Parse price with validation
+      double parsedPrice;
+      try {
+        parsedPrice = (data['price'] as num).toDouble();
+        if (parsedPrice < 0) {
+          throw Exception('Price cannot be negative');
+        }
+      } catch (e) {
+        throw Exception('Invalid price format: $e');
+      }
+
+      // Parse imageUrls with validation
+      List<String> parsedImageUrls = [];
+      if (data['imageUrls'] != null) {
+        try {
+          parsedImageUrls = List<String>.from(data['imageUrls']);
+        } catch (e) {
+          throw Exception('Invalid imageUrls format: $e');
+        }
+      }
+
+      // Parse specifications with validation
+      Map<String, dynamic> parsedSpecifications = {};
+      if (data['specifications'] != null) {
+        try {
+          parsedSpecifications = Map<String, dynamic>.from(
+            data['specifications'],
+          );
+        } catch (e) {
+          throw Exception('Invalid specifications format: $e');
+        }
+      }
+
+      return ProductModel(
+        id: doc.id,
+        name: data['name'] as String,
+        description: data['description'] as String,
+        price: parsedPrice,
+        category: data['category'] as String,
+        imageUrls: parsedImageUrls,
+        isAvailable: data['isAvailable'] ?? true,
+        rating: (data['rating'] as num?)?.toDouble() ?? 0.0,
+        reviewCount: data['reviewCount'] ?? 0,
+        specifications: parsedSpecifications,
+        dimensions:
+            data['dimensions'] != null
+                ? Map<String, dynamic>.from(data['dimensions'])
+                : null,
+        colors:
+            data['colors'] != null ? List<String>.from(data['colors']) : null,
+        materials:
+            data['materials'] != null
+                ? List<String>.from(data['materials'])
+                : null,
+        brand: data['brand'],
+        discountPrice:
+            data['discountPrice'] != null
+                ? (data['discountPrice'] as num).toDouble()
+                : null,
+        stockQuantity: data['stockQuantity'],
+        isFeatured: data['isFeatured'] ?? false,
+        createdAt: (data['createdAt'] as Timestamp).toDate(),
+        updatedAt:
+            data['updatedAt'] != null
+                ? (data['updatedAt'] as Timestamp).toDate()
+                : null,
+      );
+    } catch (e) {
+      throw Exception('Failed to create ProductModel: $e');
+    }
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'price': price,
+      'category': category,
+      'imageUrls': imageUrls,
+      'isAvailable': isAvailable,
+      'rating': rating,
+      'reviewCount': reviewCount,
+      'specifications': specifications,
+      'dimensions': dimensions,
+      'colors': colors,
+      'materials': materials,
+      'brand': brand,
+      'discountPrice': discountPrice,
+      'stockQuantity': stockQuantity,
+      'isFeatured': isFeatured,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
+    };
+  }
 
   // Copy with method
   ProductModel copyWith({
@@ -92,104 +199,16 @@ class ProductModel {
     );
   }
 
-  // Convert to map
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'name': name,
-      'description': description,
-      'price': price,
-      'category': category,
-      'imageUrls': imageUrls,
-      'isAvailable': isAvailable,
-      'rating': rating,
-      'reviewCount': reviewCount,
-      'specifications': specifications,
-      'dimensions': dimensions,
-      'colors': colors,
-      'materials': materials,
-      'brand': brand,
-      'discountPrice': discountPrice,
-      'stockQuantity': stockQuantity,
-      'isFeatured': isFeatured,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
-    };
-  }
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProductModel &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name;
 
-  // Create from Firestore
-  factory ProductModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-
-    return ProductModel(
-      id: doc.id,
-      name: data['name'] ?? '',
-      description: data['description'] ?? '',
-      price: (data['price'] ?? 0.0).toDouble(),
-      category: data['category'] ?? '',
-      imageUrls: List<String>.from(data['imageUrls'] ?? []),
-      isAvailable: data['isAvailable'] ?? true,
-      rating: (data['rating'] ?? 0.0).toDouble(),
-      reviewCount: data['reviewCount'] ?? 0,
-      specifications: data['specifications'] ?? {},
-      dimensions: data['dimensions'],
-      colors: data['colors'] != null ? List<String>.from(data['colors']) : null,
-      materials:
-          data['materials'] != null
-              ? List<String>.from(data['materials'])
-              : null,
-      brand: data['brand'],
-      discountPrice:
-          data['discountPrice'] != null
-              ? (data['discountPrice']).toDouble()
-              : null,
-      stockQuantity: data['stockQuantity'],
-      isFeatured: data['isFeatured'] ?? false,
-      createdAt:
-          data['createdAt'] != null
-              ? (data['createdAt'] as Timestamp).toDate()
-              : DateTime.now(),
-      updatedAt:
-          data['updatedAt'] != null
-              ? (data['updatedAt'] as Timestamp).toDate()
-              : null,
-    );
-  }
-
-  // Create from Map
-  factory ProductModel.fromMap(Map<String, dynamic> map) {
-    return ProductModel(
-      id: map['id'] ?? '',
-      name: map['name'] ?? '',
-      description: map['description'] ?? '',
-      price: (map['price'] ?? 0.0).toDouble(),
-      category: map['category'] ?? '',
-      imageUrls: List<String>.from(map['imageUrls'] ?? []),
-      isAvailable: map['isAvailable'] ?? true,
-      rating: (map['rating'] ?? 0.0).toDouble(),
-      reviewCount: map['reviewCount'] ?? 0,
-      specifications: map['specifications'] ?? {},
-      dimensions: map['dimensions'],
-      colors: map['colors'] != null ? List<String>.from(map['colors']) : null,
-      materials:
-          map['materials'] != null ? List<String>.from(map['materials']) : null,
-      brand: map['brand'],
-      discountPrice:
-          map['discountPrice'] != null
-              ? (map['discountPrice']).toDouble()
-              : null,
-      stockQuantity: map['stockQuantity'],
-      isFeatured: map['isFeatured'] ?? false,
-      createdAt:
-          map['createdAt'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
-              : DateTime.now(),
-      updatedAt:
-          map['updatedAt'] != null
-              ? DateTime.fromMillisecondsSinceEpoch(map['updatedAt'])
-              : null,
-    );
-  }
+  @override
+  int get hashCode => id.hashCode ^ name.hashCode;
 
   // Helper method to get image files from image IDs
   Future<List<File>> getImageFiles() async {
