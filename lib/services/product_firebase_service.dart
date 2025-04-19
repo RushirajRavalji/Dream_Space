@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/product_model.dart';
+import '../models/category_model.dart';
 import '../utils/firebase_collections.dart';
 
 class ProductFirebaseService {
@@ -235,7 +236,7 @@ class ProductFirebaseService {
 
     for (int i = 0; i < totalChunks; i++) {
       final chunkDoc =
-          await _productImagesChunksCollection.doc('${imageId}_$i').get();
+          await _productImagesChunksCollection.doc('${imageId}$i').get();
 
       if (!chunkDoc.exists) {
         throw Exception('Image chunk not found');
@@ -275,13 +276,27 @@ class ProductFirebaseService {
           final int totalChunks = data['totalChunks'];
 
           for (int i = 0; i < totalChunks; i++) {
-            await _productImagesChunksCollection.doc('${imageId}_$i').delete();
+            await _productImagesChunksCollection.doc('${imageId}$i').delete();
           }
         }
       }
     } catch (e) {
       debugPrint('Error deleting image: $e');
       // Continue even if image deletion fails
+    }
+  }
+
+  // Get categories
+  Future<List<CategoryModel>> getCategories() async {
+    try {
+      final QuerySnapshot snapshot =
+          await FirebaseCollections.categoriesCollection.get();
+      return snapshot.docs
+          .map((doc) => CategoryModel.fromFirestore(doc))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching categories: $e');
+      return [];
     }
   }
 }

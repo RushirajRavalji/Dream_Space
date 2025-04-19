@@ -109,51 +109,14 @@ class ProductProvider with ChangeNotifier {
 
   // Load categories
   Future<void> loadCategories() async {
-    // This would typically fetch from Firebase
-    // Using hardcoded values for now - replace with actual service
-    _categories = [
-      CategoryModel(
-        id: '1',
-        name: 'Living Room',
-        imageUrl: 'assets/6.jpg',
-        itemCount: '24 items',
-        color: Color(0xFFD8A17E),
-        description: 'Beautiful furniture for your living room',
-      ),
-      CategoryModel(
-        id: '2',
-        name: 'Bedroom',
-        imageUrl: 'assets/1.png',
-        itemCount: '18 items',
-        color: Color(0xFF555B6E),
-        description: 'Comfortable furniture for your bedroom',
-      ),
-      CategoryModel(
-        id: '3',
-        name: 'Dining',
-        imageUrl: 'assets/3.png',
-        itemCount: '12 items',
-        color: Color(0xFFE8D4C3),
-        description: 'Elegant dining tables and chairs',
-      ),
-      CategoryModel(
-        id: '4',
-        name: 'Office',
-        imageUrl: 'assets/4.png',
-        itemCount: '15 items',
-        color: Color(0xFF2D3142),
-        description: 'Productive furniture for your workspace',
-      ),
-      CategoryModel(
-        id: '5',
-        name: 'Accent Chairs',
-        imageUrl: 'assets/5.png',
-        itemCount: '8 items',
-        color: Color(0xFF9CA0AB),
-        description: 'Stylish accent chairs to complement your space',
-      ),
-    ];
-    notifyListeners();
+    try {
+      _setLoading(true);
+      final categories = await _productService.getCategories();
+      _categories = categories;
+      _setLoading(false);
+    } catch (e) {
+      _setError('Error loading categories: $e');
+    }
   }
 
   // Get product by ID
