@@ -43,7 +43,7 @@ class AllCategoriesPage extends StatelessWidget {
             itemBuilder: (context, index) {
               final category = categories[index];
               return CategoryCard(
-                name: category.name,
+                title: category.name,
                 imageUrl: category.imageUrl,
                 color: category.color,
                 itemCount: category.itemCount,

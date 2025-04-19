@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:new_furniture_app_fixed/providers/auth_provider.dart';
 import 'package:new_furniture_app_fixed/providers/product_provider.dart';
+import 'package:new_furniture_app_fixed/providers/connectivity_provider.dart';
 import 'package:new_furniture_app_fixed/utils/app_theme.dart';
 import 'package:new_furniture_app_fixed/screens/auth/register_screen.dart';
 import 'package:new_furniture_app_fixed/screens/auth/forgot_password_screen.dart';
@@ -25,8 +25,12 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+
     // Check connectivity on startup
     checkConnectivity();
+
+    // Check if user is already logged in
+    _checkExistingSession();
   }
 
   @override
@@ -35,16 +39,16 @@ class _LoginScreenState extends State<LoginScreen> {
     _passwordController.dispose();
     super.dispose();
   }
-  
+
   // Check network connectivity
   Future<void> checkConnectivity() async {
     try {
-      var connectivityResult = await Connectivity().checkConnectivity();
-      // With newer connectivity_plus, we need to handle possible list result
-      final bool hasConnection = connectivityResult is List 
-        ? (connectivityResult.isNotEmpty && connectivityResult.first != ConnectivityResult.none)
-        : (connectivityResult != ConnectivityResult.none);
-        
+      final connectivityProvider = Provider.of<ConnectivityProvider>(
+        context,
+        listen: false,
+      );
+      final hasConnection = await connectivityProvider.checkConnectivity();
+
       setState(() {
         _isNetworkError = !hasConnection;
       });
@@ -56,18 +60,37 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // Check if user already has a valid session
+  Future<void> _checkExistingSession() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    // If user is already authenticated, navigate to main app
+    if (authProvider.isAuthenticated) {
+      // A small delay to allow UI to initialize
+      await Future.delayed(Duration(milliseconds: 500));
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const MainApp()),
+      );
+    }
+  }
+
   void _signIn() async {
     // Validate form first
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
-    
+
     // Check connectivity first
     await checkConnectivity();
     if (_isNetworkError) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No internet connection. Please check your network settings.'),
+          content: Text(
+            'No internet connection. Please check your network settings.',
+          ),
           action: SnackBarAction(
             label: 'Retry',
             onPressed: () {
@@ -78,38 +101,44 @@ class _LoginScreenState extends State<LoginScreen> {
               });
             },
           ),
-        )
+        ),
       );
       return;
     }
-    
+
     // Clear any previous error messages
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
-    
+
     // Set loading state
     setState(() {});
-    
+
     try {
       // Special handling for admin account
       if (email == 'driger.ray.dranzer@gmail.com' && password == 'Admin@1234') {
         await _handleAdminLogin(authProvider, email, password);
         return;
       }
-      
+
       // Regular user login
-      final success = await authProvider.loginWithEmailAndPassword(email, password);
-      
+      final success = await authProvider.loginWithEmailAndPassword(
+        email,
+        password,
+      );
+
       if (!mounted) return;
-      
+
       if (success) {
         // Initialize product data if needed
-        final productProvider = Provider.of<ProductProvider>(context, listen: false);
-        await productProvider.initializeData();
-        
+        final productProvider = Provider.of<ProductProvider>(
+          context,
+          listen: false,
+        );
+        await productProvider.initialize();
+
         // Navigate to main app
         Navigator.pushAndRemoveUntil(
           context,
@@ -119,21 +148,25 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         // This should rarely happen as loginWithEmailAndPassword typically throws on failure
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Login failed. Please check your credentials.'))
+          const SnackBar(
+            content: Text('Login failed. Please check your credentials.'),
+          ),
         );
       }
     } catch (e) {
       if (!mounted) return;
-      
+
       // Check if it's a network error
       if (e.toString().contains('network')) {
         setState(() {
           _isNetworkError = true;
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Network error. Please check your internet connection.'),
+            content: Text(
+              'Network error. Please check your internet connection.',
+            ),
             action: SnackBarAction(
               label: 'Retry',
               onPressed: () {
@@ -144,28 +177,35 @@ class _LoginScreenState extends State<LoginScreen> {
                 });
               },
             ),
-          )
+          ),
         );
         return;
       }
-      
+
       // Format Firebase error messages to be more user-friendly
       String errorMessage = _formatAuthError(e.toString());
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMessage))
-      );
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(errorMessage)));
     }
   }
-  
+
   // Handle admin login with special privileges
-  Future<void> _handleAdminLogin(AuthProvider authProvider, String email, String password) async {
+  Future<void> _handleAdminLogin(
+    AuthProvider authProvider,
+    String email,
+    String password,
+  ) async {
     try {
       // First try normal login
-      bool loginSuccess = await authProvider.loginWithEmailAndPassword(email, password);
-      
+      bool loginSuccess = await authProvider.loginWithEmailAndPassword(
+        email,
+        password,
+      );
+
       if (!mounted) return;
-      
+
       if (loginSuccess) {
         // Admin login successful, navigate to main app
         Navigator.pushAndRemoveUntil(
@@ -179,7 +219,7 @@ class _LoginScreenState extends State<LoginScreen> {
       // Login failed - could be because account doesn't exist
       // Proceed to try creating the account
     }
-    
+
     try {
       // Try to register this admin account
       bool registerSuccess = await authProvider.registerWithEmailAndPassword(
@@ -187,9 +227,9 @@ class _LoginScreenState extends State<LoginScreen> {
         password,
         'Admin User',
       );
-      
+
       if (!mounted) return;
-      
+
       if (registerSuccess) {
         // Admin registration successful, navigate to main app
         Navigator.pushAndRemoveUntil(
@@ -199,21 +239,23 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to create admin account. Please try again.'))
+          const SnackBar(
+            content: Text('Failed to create admin account. Please try again.'),
+          ),
         );
       }
     } catch (e) {
       if (!mounted) return;
-      
+
       // Format Firebase error messages to be more user-friendly
       String errorMessage = _formatAuthError(e.toString());
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Admin account setup failed: $errorMessage'))
+        SnackBar(content: Text('Admin account setup failed: $errorMessage')),
       );
     }
   }
-  
+
   // Format Firebase auth errors to be more user-friendly
   String _formatAuthError(String errorMessage) {
     if (errorMessage.contains('user-not-found')) {
@@ -253,7 +295,10 @@ class _LoginScreenState extends State<LoginScreen> {
               Container(
                 width: double.infinity,
                 color: Colors.red.shade100,
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 6,
+                  horizontal: 16,
+                ),
                 child: Row(
                   children: [
                     const Icon(Icons.wifi_off, color: Colors.red, size: 16),
@@ -261,7 +306,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     Expanded(
                       child: Text(
                         'No internet connection',
-                        style: TextStyle(color: Colors.red.shade900, fontSize: 12),
+                        style: TextStyle(
+                          color: Colors.red.shade900,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                     TextButton(
@@ -273,7 +321,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       child: Text(
                         'Retry',
-                        style: TextStyle(color: Colors.red.shade900, fontSize: 12),
+                        style: TextStyle(
+                          color: Colors.red.shade900,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ],
@@ -316,7 +367,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               if (value == null || value.isEmpty) {
                                 return 'Please enter your email';
                               }
-                              if (!value.contains('@') || !value.contains('.')) {
+                              if (!value.contains('@') ||
+                                  !value.contains('.')) {
                                 return 'Please enter a valid email';
                               }
                               return null;
@@ -356,7 +408,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               onPressed: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
-                                    builder: (context) => ForgotPasswordScreen(),
+                                    builder:
+                                        (context) => ForgotPasswordScreen(),
                                   ),
                                 );
                               },
@@ -393,7 +446,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text("Don't have an account? ", style: AppTheme.bodyMedium),
+                        Text(
+                          "Don't have an account? ",
+                          style: AppTheme.bodyMedium,
+                        ),
                         TextButton(
                           onPressed: () {
                             Navigator.of(context).push(

@@ -42,12 +42,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: Colors.white),
             tooltip: 'Refresh Product Listings',
             onPressed: () => _refreshProductListings(context),
           ),
           IconButton(
-            icon: const Icon(Icons.cloud_upload),
+            icon: const Icon(Icons.cloud_upload, color: Colors.white),
             tooltip: 'Upload All Assets',
             onPressed:
                 _assetsUploading ? null : () => _uploadAllAssets(context),
@@ -68,7 +68,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     backgroundColor: Colors.white,
                     child: Icon(
                       Icons.admin_panel_settings,
-                      color: AppTheme.primaryColor,
+                      color: Colors.white,
                       size: 30,
                     ),
                   ),
@@ -321,64 +321,110 @@ class AdminHome extends StatelessWidget {
   }
 
   Widget _buildQuickActions(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      crossAxisSpacing: 16,
-      mainAxisSpacing: 16,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
+    return Column(
       children: [
-        _buildActionCard(
-          context,
-          title: 'Add Product',
-          icon: Icons.add_circle_outline,
-          color: AppTheme.primaryColor,
-          onTap: () {
-            Navigator.push(
+        GridView.count(
+          crossAxisCount: 2,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            _buildActionCard(
               context,
-              MaterialPageRoute(builder: (context) => const AddProductPage()),
-            );
-          },
+              title: 'Add Product',
+              icon: Icons.add_circle_outline,
+              color: AppTheme.primaryColor,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AddProductPage(),
+                  ),
+                );
+              },
+            ),
+            _buildActionCard(
+              context,
+              title: 'Manage Products',
+              icon: Icons.edit,
+              color: Colors.amber[700]!,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ManageProductsPage(),
+                  ),
+                );
+              },
+            ),
+            _buildActionCard(
+              context,
+              title: 'View Orders',
+              icon: Icons.shopping_cart,
+              color: Colors.indigo,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AdminOrdersPage(),
+                  ),
+                );
+              },
+            ),
+            _buildActionCard(
+              context,
+              title: 'Refresh Cache',
+              icon: Icons.refresh,
+              color: Colors.teal[600]!,
+              onTap: () => _refreshCache(context),
+            ),
+          ],
         ),
-        _buildActionCard(
-          context,
-          title: 'Manage Products',
-          icon: Icons.edit,
-          color: Colors.amber[700]!,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ManageProductsPage(),
-              ),
-            );
-          },
+
+        const SizedBox(height: 24),
+        const Text(
+          'Troubleshooting Tools',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
-        _buildActionCard(
-          context,
-          title: 'Add Category',
-          icon: Icons.add_box,
-          color: Colors.teal,
-          onTap: () {
-            Navigator.push(
+        const SizedBox(height: 16),
+
+        GridView.count(
+          crossAxisCount: 2,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            _buildActionCard(
               context,
-              MaterialPageRoute(
-                builder: (context) => const ManageCategoriesPage(),
-              ),
-            );
-          },
-        ),
-        _buildActionCard(
-          context,
-          title: 'View Orders',
-          icon: Icons.shopping_cart,
-          color: Colors.indigo,
-          onTap: () {
-            Navigator.push(
+              title: 'Check Images',
+              icon: Icons.find_in_page,
+              color: Colors.blue[600]!,
+              onTap: () => _diagnoseProblem(context),
+            ),
+            _buildActionCard(
               context,
-              MaterialPageRoute(builder: (context) => const AdminOrdersPage()),
-            );
-          },
+              title: 'Fix Product Images',
+              icon: Icons.healing,
+              color: Colors.red[600]!,
+              onTap: () => _fixImages(context),
+            ),
+            _buildActionCard(
+              context,
+              title: 'Fix Category Images',
+              icon: Icons.category,
+              color: Colors.green[600]!,
+              onTap: () => _fixCategoryImages(context),
+            ),
+            _buildActionCard(
+              context,
+              title: 'Use Local Assets',
+              icon: Icons.storage,
+              color: Colors.purple[600]!,
+              onTap: () => _updateCategoriesToUseAssets(context),
+            ),
+          ],
         ),
       ],
     );
@@ -417,5 +463,336 @@ class AdminHome extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _diagnoseProblem(BuildContext context) async {
+    final productProvider = Provider.of<ProductProvider>(
+      context,
+      listen: false,
+    );
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Diagnosing Images'),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Checking product images in database...'),
+              ],
+            ),
+          ),
+    );
+
+    try {
+      // Run the diagnostic
+      await productProvider.checkProductImages();
+
+      // Close the dialog
+      Navigator.of(context).pop();
+
+      // Show result dialog
+      showDialog(
+        context: context,
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('Diagnosis Complete'),
+              content: const Text(
+                'Image diagnostic complete. Check the console for detailed results.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+      );
+    } catch (e) {
+      // Close the dialog
+      Navigator.of(context).pop();
+
+      // Show error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error during diagnosis: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _fixImages(BuildContext context) async {
+    final productProvider = Provider.of<ProductProvider>(
+      context,
+      listen: false,
+    );
+
+    // Show confirmation dialog
+    final shouldFix = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Fix Product Images'),
+            content: const Text(
+              'This will check all products for missing or invalid images and fix them with placeholders. Continue?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Fix Images'),
+              ),
+            ],
+          ),
+    );
+
+    if (shouldFix != true) {
+      return;
+    }
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Fixing Images'),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Fixing product images in database...'),
+              ],
+            ),
+          ),
+    );
+
+    try {
+      // Run the fix
+      await productProvider.fixProductImages();
+
+      // Close the dialog
+      Navigator.of(context).pop();
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Product images fixed successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      // Close the dialog
+      Navigator.of(context).pop();
+
+      // Show error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error fixing images: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _refreshCache(BuildContext context) async {
+    final productProvider = Provider.of<ProductProvider>(
+      context,
+      listen: false,
+    );
+
+    // Show loading snackbar
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Refreshing product listings...'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    try {
+      // Refresh product data
+      await productProvider.initializeData();
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Product listings refreshed successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error refreshing listings: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _fixCategoryImages(BuildContext context) async {
+    final productProvider = Provider.of<ProductProvider>(
+      context,
+      listen: false,
+    );
+
+    // Show confirmation dialog
+    final shouldFix = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Fix Category Images'),
+            content: const Text(
+              'This will check all categories for missing or invalid images and fix them with appropriate images. Continue?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Fix Categories'),
+              ),
+            ],
+          ),
+    );
+
+    if (shouldFix != true) {
+      return;
+    }
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Fixing Categories'),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Fixing category images in database...'),
+              ],
+            ),
+          ),
+    );
+
+    try {
+      // Run the fix
+      await productProvider.fixCategoryImages();
+
+      // Close the dialog
+      Navigator.of(context).pop();
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Category images fixed successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      // Close the dialog
+      Navigator.of(context).pop();
+
+      // Show error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error fixing category images: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _updateCategoriesToUseAssets(BuildContext context) async {
+    final productProvider = Provider.of<ProductProvider>(
+      context,
+      listen: false,
+    );
+
+    // Show confirmation dialog
+    final shouldFix = await showDialog<bool>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Update Category Images'),
+            content: const Text(
+              'This will update all categories to use local asset images instead of Firebase images. Continue?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Update Categories'),
+              ),
+            ],
+          ),
+    );
+
+    if (shouldFix != true) {
+      return;
+    }
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Updating Categories'),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Updating categories to use local assets...'),
+              ],
+            ),
+          ),
+    );
+
+    try {
+      // Run the update
+      await productProvider.updateCategoriesToUseAssets();
+
+      // Close the dialog
+      Navigator.of(context).pop();
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Categories updated to use local assets successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      // Close the dialog
+      Navigator.of(context).pop();
+
+      // Show error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error updating categories: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }

@@ -1,4 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:io';
+import '../services/firebase_service.dart';
+import 'package:flutter/services.dart';
 
 class ProductModel {
   final String id;
@@ -186,5 +189,71 @@ class ProductModel {
               ? DateTime.fromMillisecondsSinceEpoch(map['updatedAt'])
               : null,
     );
+  }
+
+  // Helper method to get image files from image IDs
+  Future<List<File>> getImageFiles() async {
+    try {
+      final firebaseService = FirebaseService();
+      return await firebaseService.getProductImagesFromIds(imageUrls);
+    } catch (e) {
+      print('Error getting image files: $e');
+      return [];
+    }
+  }
+
+  // Get the first image as a File
+  Future<File?> getFirstImage() async {
+    try {
+      print("ProductModel: Getting first image for product ${name} (ID: $id)");
+      print("ProductModel: Image URLs: $imageUrls");
+
+      if (imageUrls.isEmpty) {
+        print("ProductModel: No image URLs available");
+        return null;
+      }
+
+      String firstImageId = imageUrls.first;
+      print("ProductModel: First image ID: $firstImageId");
+
+      // Check if it's an asset path
+      if (firstImageId.startsWith('assets/')) {
+        print("ProductModel: Using asset path: $firstImageId");
+        // Load as asset and create a temporary file
+        final imageData = await rootBundle.load(firstImageId);
+        final directory = await Directory.systemTemp.createTemp();
+        final file = File('${directory.path}/temp_image.png');
+        await file.writeAsBytes(imageData.buffer.asUint8List());
+        print("ProductModel: Created temporary file from asset");
+        return file;
+      }
+
+      // Load from Firebase
+      print("ProductModel: Loading image from Firebase");
+      final service = FirebaseService();
+      final result = await service.getProductImagesFromIds([firstImageId]);
+
+      if (result.isNotEmpty) {
+        print("ProductModel: Successfully loaded image from Firebase");
+        return result.first;
+      } else {
+        print("ProductModel: Failed to load image from Firebase");
+        return null;
+      }
+    } catch (e) {
+      print("ProductModel: Error getting first image: $e");
+      return null;
+    }
+  }
+
+  // Static helper to upload image files for a product
+  static Future<List<String>> uploadProductImages(List<File> imageFiles) async {
+    try {
+      final firebaseService = FirebaseService();
+      return await firebaseService.uploadProductImagesFromFiles(imageFiles);
+    } catch (e) {
+      print('Error uploading product images: $e');
+      return [];
+    }
   }
 }

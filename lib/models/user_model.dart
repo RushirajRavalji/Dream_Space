@@ -9,6 +9,7 @@ class UserModel {
   final String? profileImageUrl;
   final List<String> wishlist;
   final DateTime createdAt;
+  final bool isAdmin;
 
   UserModel({
     required this.id,
@@ -19,6 +20,7 @@ class UserModel {
     this.profileImageUrl,
     List<String>? wishlist,
     required this.createdAt,
+    this.isAdmin = false,
   }) : wishlist = wishlist ?? [];
 
   // Copy with method for creating a new instance with updated values
@@ -31,6 +33,7 @@ class UserModel {
     String? profileImageUrl,
     List<String>? wishlist,
     DateTime? createdAt,
+    bool? isAdmin,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -41,6 +44,7 @@ class UserModel {
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
       wishlist: wishlist ?? this.wishlist,
       createdAt: createdAt ?? this.createdAt,
+      isAdmin: isAdmin ?? this.isAdmin,
     );
   }
 
@@ -55,6 +59,7 @@ class UserModel {
       'profileImageUrl': profileImageUrl,
       'wishlist': wishlist,
       'createdAt': Timestamp.fromDate(createdAt),
+      'isAdmin': isAdmin,
     };
   }
 
@@ -70,16 +75,18 @@ class UserModel {
       address: data['address'],
       profileImageUrl: data['profileImageUrl'],
       wishlist: List<String>.from(data['wishlist'] ?? []),
-      createdAt: data['createdAt'] is Timestamp
-          ? (data['createdAt'] as Timestamp).toDate()
-          : DateTime.now(),
+      createdAt:
+          data['createdAt'] is Timestamp
+              ? (data['createdAt'] as Timestamp).toDate()
+              : DateTime.now(),
+      isAdmin: data['isAdmin'] ?? false,
     );
   }
 
   // For debugging
   @override
   String toString() {
-    return 'UserModel(id: $id, email: $email, fullName: $fullName, phone: $phone, address: $address)';
+    return 'UserModel(id: $id, email: $email, fullName: $fullName, phone: $phone, address: $address, isAdmin: $isAdmin)';
   }
 
   factory UserModel.fromMap(Map<String, dynamic> map) {
@@ -90,11 +97,13 @@ class UserModel {
       phone: map['phone'],
       address: map['address'],
       profileImageUrl: map['profileImageUrl'],
-      createdAt: map['createdAt'] != null
-          ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
-          : DateTime.now(),
+      createdAt:
+          map['createdAt'] != null
+              ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
+              : DateTime.now(),
       wishlist:
           map['wishlist'] != null ? List<String>.from(map['wishlist']) : [],
+      isAdmin: map['isAdmin'] ?? false,
     );
   }
 
@@ -104,6 +113,7 @@ class UserModel {
       email: '',
       fullName: '',
       createdAt: DateTime.now(),
+      isAdmin: false,
     );
   }
 }

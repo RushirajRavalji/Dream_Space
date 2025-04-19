@@ -93,12 +93,63 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _logout() async {
+    // Show confirmation dialog
+    final bool confirm =
+        await showDialog(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: const Text('Logout'),
+                content: const Text('Are you sure you want to logout?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryColor,
+                    ),
+                    child: const Text('Logout'),
+                  ),
+                ],
+              ),
+        ) ??
+        false;
+
+    if (!confirm) return;
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    await authProvider.logout();
-    if (!mounted) return;
-    Navigator.of(
-      context,
-    ).pushReplacement(MaterialPageRoute(builder: (context) => LoginScreen()));
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      await authProvider.logout();
+      if (!mounted) return;
+
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      // Navigate to login screen
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      // Show error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to logout: ${e.toString()}')),
+      );
+    }
   }
 
   Future<void> _pickImage() async {
@@ -204,194 +255,206 @@ class _ProfilePageState extends State<ProfilePage> {
         }
 
         final UserModel user = authProvider.userData!;
+        final bool isAdmin = authProvider.isAdmin;
 
         return Scaffold(
           backgroundColor: AppTheme.backgroundColor,
           appBar: AppBar(
-            title: Text('Profile', style: AppTheme.headingSmall),
+            title: Text(
+              isAdmin ? 'Admin Profile' : 'Profile',
+              style: AppTheme.headingSmall,
+            ),
             backgroundColor: AppTheme.surfaceColor,
             elevation: 0,
             actions: [
-              IconButton(
-                icon: Icon(
-                  _isEditing ? Icons.close : Icons.edit,
-                  color: AppTheme.textPrimaryColor,
+              if (isAdmin)
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Chip(
+                    label: const Text('ADMIN'),
+                    backgroundColor: AppTheme.primaryColor.withOpacity(0.2),
+                    labelStyle: TextStyle(
+                      color: AppTheme.primaryColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
-                onPressed: () {
-                  setState(() {
-                    if (_isEditing) {
-                      // Cancel editing - restore original values
-                      _initializeControllers();
-                    }
-                    _isEditing = !_isEditing;
-                  });
-                },
+              IconButton(
+                icon: const Icon(Icons.exit_to_app),
+                onPressed: _logout,
+                tooltip: 'Logout',
               ),
             ],
           ),
           body: SingleChildScrollView(
-            child: Padding(
-              padding: EdgeInsets.all(AppTheme.spacing_l),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Profile picture
-                  Center(
-                    child: Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 50,
-                          backgroundColor: AppTheme.accentColor,
-                          child:
-                              user.profileImageUrl != null
-                                  ? ClipOval(
-                                    child: Image.memory(
-                                      base64Decode(user.profileImageUrl!),
-                                      width: 100,
-                                      height: 100,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  )
-                                  : const Icon(
-                                    Icons.person,
-                                    size: 50,
-                                    color: Colors.white,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Profile picture
+                Center(
+                  child: Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: AppTheme.accentColor,
+                        child:
+                            user.profileImageUrl != null
+                                ? ClipOval(
+                                  child: Image.memory(
+                                    base64Decode(user.profileImageUrl!),
+                                    width: 100,
+                                    height: 100,
+                                    fit: BoxFit.cover,
                                   ),
-                        ),
-                        if (_isEditing)
-                          Positioned(
-                            right: 0,
-                            bottom: 0,
-                            child: CircleAvatar(
-                              backgroundColor: AppTheme.primaryColor,
-                              radius: 18,
-                              child: IconButton(
-                                icon: const Icon(
-                                  Icons.camera_alt,
-                                  size: 18,
+                                )
+                                : const Icon(
+                                  Icons.person,
+                                  size: 50,
                                   color: Colors.white,
                                 ),
-                                onPressed: () {
-                                  // Implement image picker
-                                  _pickImage();
-                                },
+                      ),
+                      if (_isEditing)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: CircleAvatar(
+                            backgroundColor: AppTheme.primaryColor,
+                            radius: 18,
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.camera_alt,
+                                size: 18,
+                                color: Colors.white,
                               ),
+                              onPressed: () {
+                                // Implement image picker
+                                _pickImage();
+                              },
                             ),
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
-                  SizedBox(height: AppTheme.spacing_l),
+                ),
+                SizedBox(height: AppTheme.spacing_l),
 
-                  // Name field
-                  TextField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Full Name',
-                      prefixIcon: Icon(Icons.person_outline),
-                    ),
-                    enabled: _isEditing,
+                // Name field
+                TextField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name',
+                    prefixIcon: Icon(Icons.person_outline),
                   ),
-                  SizedBox(height: AppTheme.spacing_m),
+                  enabled: _isEditing,
+                ),
+                SizedBox(height: AppTheme.spacing_m),
 
-                  // Email field (disabled, cannot change email after registration)
-                  TextField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email_outlined),
-                    ),
-                    enabled: false,
+                // Email field (disabled, cannot change email after registration)
+                TextField(
+                  controller: _emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    prefixIcon: Icon(Icons.email_outlined),
                   ),
-                  SizedBox(height: AppTheme.spacing_m),
+                  enabled: false,
+                ),
+                SizedBox(height: AppTheme.spacing_m),
 
-                  // Phone field
-                  TextField(
-                    controller: _phoneController,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone Number',
-                      prefixIcon: Icon(Icons.phone_outlined),
-                    ),
-                    enabled: _isEditing,
-                    keyboardType: TextInputType.phone,
+                // Phone field
+                TextField(
+                  controller: _phoneController,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone Number',
+                    prefixIcon: Icon(Icons.phone_outlined),
                   ),
-                  SizedBox(height: AppTheme.spacing_m),
+                  enabled: _isEditing,
+                  keyboardType: TextInputType.phone,
+                ),
+                SizedBox(height: AppTheme.spacing_m),
 
-                  // Address field
-                  TextField(
-                    controller: _addressController,
-                    decoration: const InputDecoration(
-                      labelText: 'Address',
-                      prefixIcon: Icon(Icons.location_on_outlined),
-                    ),
-                    enabled: _isEditing,
-                    maxLines: 3,
+                // Address field
+                TextField(
+                  controller: _addressController,
+                  decoration: const InputDecoration(
+                    labelText: 'Address',
+                    prefixIcon: Icon(Icons.location_on_outlined),
                   ),
-                  SizedBox(height: AppTheme.spacing_xl),
+                  enabled: _isEditing,
+                  maxLines: 3,
+                ),
+                SizedBox(height: AppTheme.spacing_xl),
 
-                  // Support
-                  Text('Support', style: AppTheme.labelLarge),
-                  SizedBox(height: AppTheme.spacing_m),
+                // Support
+                Text('Support', style: AppTheme.labelLarge),
+                SizedBox(height: AppTheme.spacing_m),
 
+                _buildSettingItem(
+                  context,
+                  icon: Icons.help_outline,
+                  title: 'Help Center',
+                  onTap: () {},
+                ),
+
+                _buildSettingItem(
+                  context,
+                  icon: Icons.info_outline,
+                  title: 'About Us',
+                  onTap: () {},
+                ),
+
+                // Admin Tools (only for admin users)
+                if (isAdmin) ...[
+                  const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text('Admin Tools', style: AppTheme.labelLarge),
+                  ),
                   _buildSettingItem(
                     context,
-                    icon: Icons.help_outline,
-                    title: 'Help Center',
-                    onTap: () {},
-                  ),
-
-                  _buildSettingItem(
-                    context,
-                    icon: Icons.info_outline,
-                    title: 'About Us',
-                    onTap: () {},
-                  ),
-
-                  // Admin Dashboard (only for admin users)
-                  // Recognized admin emails: admin@example.com and driger.ray.dranzer@gmail.com
-                  if (user.email == 'admin@example.com' || user.email == 'driger.ray.dranzer@gmail.com') ...[
-                    SizedBox(height: AppTheme.spacing_xl),
-                    Text('Admin Tools', style: AppTheme.labelLarge),
-                    SizedBox(height: AppTheme.spacing_m),
-                    _buildSettingItem(
-                      context,
-                      icon: Icons.admin_panel_settings,
-                      title: 'Admin Dashboard',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const AdminDashboard(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-
-                  SizedBox(height: AppTheme.spacing_xl),
-
-                  // Save button (only visible in edit mode)
-                  if (_isEditing)
-                    ElevatedButton(
-                      onPressed: _updateProfile,
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 48),
-                      ),
-                      child: const Text('Save Changes'),
-                    ),
-
-                  // Logout button
-                  SizedBox(height: AppTheme.spacing_m),
-                  OutlinedButton.icon(
-                    onPressed: _logout,
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Logout'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
+                    icon: Icons.admin_panel_settings,
+                    title: 'Admin Dashboard',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AdminDashboard(),
+                        ),
+                      );
+                    },
                   ),
                 ],
-              ),
+
+                // Save button (only visible in edit mode)
+                if (_isEditing)
+                  ElevatedButton(
+                    onPressed: _updateProfile,
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
+                    child: const Text('Save Changes'),
+                  ),
+
+                // Logout button - more prominent at the bottom
+                Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.logout),
+                      label: const Text('Logout'),
+                      onPressed: _logout,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            isAdmin
+                                ? AppTheme.primaryColor
+                                : Colors.red.shade700,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );

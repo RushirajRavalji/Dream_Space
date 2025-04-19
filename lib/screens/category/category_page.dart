@@ -5,6 +5,8 @@ import '../../models/product_model.dart';
 import '../../providers/product_provider.dart';
 import '../../utils/app_theme.dart';
 import '../product/product_detail_page.dart';
+import '../../services/firebase_service.dart';
+import '../../components/firebase_base64_image.dart';
 
 class CategoryPage extends StatefulWidget {
   final CategoryModel category;
@@ -17,17 +19,89 @@ class CategoryPage extends StatefulWidget {
 
 class _CategoryPageState extends State<CategoryPage> {
   String _sortBy = 'newest'; // newest, price_low, price_high, rating
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     // Fetch products for this category
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<ProductProvider>(
+    _loadCategoryProducts();
+  }
+
+  // Load category products with loading state
+  Future<void> _loadCategoryProducts() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final productProvider = Provider.of<ProductProvider>(
         context,
         listen: false,
-      ).fetchProductsByCategory(widget.category.name);
-    });
+      );
+
+      // First, run diagnostics to identify any category issues
+      await productProvider.diagnoseCategoryIssues();
+
+      print(
+        "CategoryPage: Loading products for category: '${widget.category.name}'",
+      );
+
+      // Fetch products for this specific category
+      await productProvider.fetchProductsByCategory(widget.category.name);
+
+      // If we found no products, try to troubleshoot
+      if (productProvider.categoryProducts[widget.category.name]?.isEmpty ??
+          true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No products found. Checking database...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Try to fix any data issues in Firestore
+        final firebaseService = FirebaseService();
+
+        // Try to detect and fix category inconsistencies
+        print("CategoryPage: Attempting to fix category data issues");
+        int fixedCount = await firebaseService.fixCategoryInconsistencies(
+          widget.category.name,
+        );
+
+        if (fixedCount > 0) {
+          print(
+            "CategoryPage: Fixed $fixedCount products with category issues",
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Fixed $fixedCount products. Reloading...'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+
+        // Refresh again after fixes
+        await productProvider.fetchProductsByCategory(
+          widget.category.name,
+          forceRefresh: true,
+        );
+      }
+    } catch (e) {
+      print('Error loading category products: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading products: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   // Sort products based on the current sort option
@@ -69,6 +143,23 @@ class _CategoryPageState extends State<CategoryPage> {
               onPressed: () => Navigator.pop(context),
             ),
             actions: [
+              // Refresh button
+              IconButton(
+                icon: Icon(Icons.refresh, color: AppTheme.textPrimaryColor),
+                onPressed: () {
+                  // Show refresh message
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Refreshing products...'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+
+                  // Reload products
+                  _loadCategoryProducts();
+                },
+              ),
+              // Filter button
               IconButton(
                 icon: Icon(Icons.filter_list, color: AppTheme.textPrimaryColor),
                 onPressed: _showFilterOptions,
@@ -95,104 +186,142 @@ class _CategoryPageState extends State<CategoryPage> {
                       ),
                       SizedBox(height: AppTheme.spacing_s),
                       Text(
-                        widget.category.itemCount,
+                        "Found ${products.length} products",
                         style: AppTheme.labelMedium.copyWith(
-                          color: AppTheme.textSecondaryColor,
+                          color:
+                              products.isEmpty
+                                  ? AppTheme.errorColor
+                                  : AppTheme.textSecondaryColor,
                         ),
                       ),
                     ],
                   ),
                 ),
 
-                // Sort options
-                Padding(
-                  padding: const EdgeInsets.all(AppTheme.spacing_m),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Sort by:', style: AppTheme.labelLarge),
-                      DropdownButton<String>(
-                        value: _sortBy,
-                        underline: Container(
-                          height: 1,
-                          color: AppTheme.dividerColor,
-                        ),
-                        onChanged: (String? newValue) {
-                          if (newValue != null) {
-                            setState(() {
-                              _sortBy = newValue;
-                            });
-                          }
-                        },
-                        items: [
-                          DropdownMenuItem(
-                            value: 'newest',
-                            child: Text('Newest First'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'price_low',
-                            child: Text('Price: Low to High'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'price_high',
-                            child: Text('Price: High to Low'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'rating',
-                            child: Text('Highest Rated'),
+                // If loading, show progress indicator
+                if (_isLoading)
+                  Expanded(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: AppTheme.spacing_m),
+                          Text(
+                            'Loading products...',
+                            style: AppTheme.bodyMedium,
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-
-                // Product grid
-                productProvider.isLoading
-                    ? Expanded(
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                    : sortedProducts.isEmpty
-                    ? Expanded(
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.search_off,
-                              size: 64,
-                              color: AppTheme.textLightColor,
-                            ),
-                            SizedBox(height: AppTheme.spacing_m),
-                            Text(
-                              'No products found',
-                              style: AppTheme.bodyLarge,
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                    : Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppTheme.spacing_m,
-                        ),
-                        child: GridView.builder(
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                childAspectRatio: 0.7,
-                                crossAxisSpacing: AppTheme.spacing_m,
-                                mainAxisSpacing: AppTheme.spacing_m,
-                              ),
-                          itemCount: sortedProducts.length,
-                          itemBuilder: (context, index) {
-                            final product = sortedProducts[index];
-                            return _buildProductCard(context, product);
-                          },
-                        ),
+                    ),
+                  )
+                // If no products found, show empty state
+                else if (products.isEmpty)
+                  Expanded(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.inventory_2_outlined,
+                            size: 64,
+                            color: AppTheme.textSecondaryColor,
+                          ),
+                          SizedBox(height: AppTheme.spacing_m),
+                          Text(
+                            'No products found in this category',
+                            style: AppTheme.headingSmall,
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: AppTheme.spacing_s),
+                          Text(
+                            'Try refreshing or check back later',
+                            style: AppTheme.bodyMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                          SizedBox(height: AppTheme.spacing_l),
+                          ElevatedButton.icon(
+                            icon: Icon(Icons.refresh),
+                            label: Text('Refresh'),
+                            style: AppTheme.primaryButtonStyle,
+                            onPressed: () => _loadCategoryProducts(),
+                          ),
+                          SizedBox(height: AppTheme.spacing_m),
+                          TextButton(
+                            child: Text('Diagnose Category Issues'),
+                            onPressed: () async {
+                              final productProvider =
+                                  Provider.of<ProductProvider>(
+                                    context,
+                                    listen: false,
+                                  );
+                              await productProvider.diagnoseCategoryIssues();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Check console logs for diagnostic info',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ),
+                  )
+                // If we have products, show them with sort options
+                else
+                  Expanded(
+                    child: Column(
+                      children: [
+                        // Sort options
+                        Padding(
+                          padding: const EdgeInsets.all(AppTheme.spacing_m),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Sort by:', style: AppTheme.labelLarge),
+                              DropdownButton<String>(
+                                value: _sortBy,
+                                underline: Container(
+                                  height: 1,
+                                  color: AppTheme.dividerColor,
+                                ),
+                                onChanged: (String? newValue) {
+                                  if (newValue != null) {
+                                    setState(() {
+                                      _sortBy = newValue;
+                                    });
+                                  }
+                                },
+                                items: [
+                                  DropdownMenuItem(
+                                    value: 'newest',
+                                    child: Text('Newest First'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'price_low',
+                                    child: Text('Price: Low to High'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'price_high',
+                                    child: Text('Price: High to Low'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'rating',
+                                    child: Text('Highest Rated'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Products grid
+                        Expanded(child: buildProductsGrid(sortedProducts)),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
@@ -236,9 +365,25 @@ class _CategoryPageState extends State<CategoryPage> {
                 aspectRatio: 1,
                 child:
                     product.imageUrls.isNotEmpty
-                        ? Image.asset(
-                          product.imageUrls.first,
+                        ? FirebaseBase64Image(
+                          imageId: product.imageUrls.first,
                           fit: BoxFit.cover,
+                          placeholder: Container(
+                            color: Colors.grey[200],
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: AppTheme.primaryColor,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          ),
+                          errorWidget: Container(
+                            color: AppTheme.dividerColor,
+                            child: Icon(
+                              Icons.image_not_supported,
+                              color: AppTheme.textLightColor,
+                            ),
+                          ),
                         )
                         : Container(
                           color: AppTheme.dividerColor,
@@ -289,6 +434,21 @@ class _CategoryPageState extends State<CategoryPage> {
     );
   }
 
+  // Helper method to get appropriate asset image based on category
+  String _getCategoryImage(String category) {
+    // Map of category names to asset images
+    final Map<String, String> categoryImages = {
+      'Accent Chairs': 'assets/5.png',
+      'Living Room': 'assets/6.jpg',
+      'Dining': 'assets/3.png',
+      'Office': 'assets/4.png',
+      'Bedroom': 'assets/1.png',
+    };
+
+    // Return matching image or default
+    return categoryImages[category] ?? 'assets/1.png';
+  }
+
   void _showFilterOptions() {
     showModalBottomSheet(
       context: context,
@@ -321,6 +481,64 @@ class _CategoryPageState extends State<CategoryPage> {
           ),
         );
       },
+    );
+  }
+
+  void _showSortOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppTheme.borderRadius_l),
+        ),
+      ),
+      builder: (context) {
+        return Container(
+          padding: EdgeInsets.all(AppTheme.spacing_l),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Sort Options', style: AppTheme.headingSmall),
+              SizedBox(height: AppTheme.spacing_m),
+              // Sort options would go here
+              // This is a placeholder for future implementation
+              Text(
+                'No sort options available yet.',
+                style: AppTheme.bodyMedium,
+              ),
+              SizedBox(height: AppTheme.spacing_l),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: Size(double.infinity, 48),
+                ),
+                child: Text('Close'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Build products grid
+  Widget buildProductsGrid(List<ProductModel> products) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppTheme.spacing_m),
+      child: GridView.builder(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.7,
+          crossAxisSpacing: AppTheme.spacing_m,
+          mainAxisSpacing: AppTheme.spacing_m,
+        ),
+        itemCount: products.length,
+        itemBuilder: (context, index) {
+          final product = products[index];
+          return _buildProductCard(context, product);
+        },
+      ),
     );
   }
 }

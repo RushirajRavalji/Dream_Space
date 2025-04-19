@@ -548,7 +548,6 @@ class _EditProductPageState extends State<EditProductPage> {
                           return null;
                         },
                       ),
-                      const SizedBox(height: 16),
                       _buildDropdownField(
                         label: 'Category',
                         hint: 'Select product category',
@@ -561,9 +560,11 @@ class _EditProductPageState extends State<EditProductPage> {
                               );
                             }).toList(),
                         onChanged: (value) {
-                          setState(() {
-                            _selectedCategory = value;
-                          });
+                          if (!_categories.isEmpty) {
+                            setState(() {
+                              _selectedCategory = value;
+                            });
+                          }
                         },
                       ),
                       const SizedBox(height: 16),

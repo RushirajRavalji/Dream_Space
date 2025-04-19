@@ -2,381 +2,461 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/category_model.dart';
 import '../../models/product_model.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/product_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/connectivity_provider.dart';
 import '../../utils/app_theme.dart';
 import '../../utils/ui_components.dart';
 import '../category/category_page.dart';
 import '../product/product_detail_page.dart';
-import '../../services/firebase_service.dart';
+import '../all_products/all_products_page.dart';
+import '../product/product_list_screen.dart';
+import '../product/product_detail_screen.dart';
+import '../product/add_product_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({Key? key}) : super(key: key);
 
   @override
   _HomeScreenState createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final TextEditingController _searchController = TextEditingController();
-
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    final productProvider = Provider.of<ProductProvider>(
+      context,
+      listen: false,
+    );
+    try {
+      print("HomeScreen: Initializing product data");
+      await productProvider.initialize();
+      print(
+        "HomeScreen: ${productProvider.allProducts.length} products loaded",
+      );
+      print(
+        "HomeScreen: ${productProvider.featuredProducts.length} featured products loaded",
+      );
+    } catch (e) {
+      print("HomeScreen: Error initializing data: $e");
+    }
+  }
+
+  Future<void> _refreshData() async {
+    final productProvider = Provider.of<ProductProvider>(
+      context,
+      listen: false,
+    );
+    try {
+      print("HomeScreen: Refreshing product data");
+      await productProvider.initialize();
+      print(
+        "HomeScreen: ${productProvider.allProducts.length} products refreshed",
+      );
+      print(
+        "HomeScreen: ${productProvider.featuredProducts.length} featured products refreshed",
+      );
+    } catch (e) {
+      print("HomeScreen: Error refreshing data: $e");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Get auth provider to check admin status
+    final authProvider = Provider.of<AuthProvider>(context);
+    final bool isAdmin = authProvider.isAdmin;
+
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      body: SafeArea(
-        child: Consumer<ProductProvider>(
-          builder: (context, productProvider, child) {
-            if (productProvider.isLoading) {
-              return const LoadingIndicator();
-            }
+      appBar: AppBar(
+        title: const Text('Elegance Furniture'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {
+              // Search functionality would go here
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Search coming soon')),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.shopping_cart),
+            onPressed: () {
+              // Cart functionality would go here
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Cart coming soon')));
+            },
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _refreshData,
+        child: Consumer2<ProductProvider, ConnectivityProvider>(
+          builder: (context, productProvider, connectivityProvider, child) {
+            final isLoading = productProvider.isLoading;
+            final hasError = productProvider.errorMessage != null;
+            final isConnected = connectivityProvider.hasConnection;
 
-            final categories = productProvider.categories;
-
-            // Get featured products from provider
-            final featuredProducts = productProvider.featuredProducts;
-
-            return CustomScrollView(
-              slivers: [
-                // App Bar
-                SliverAppBar(
-                  backgroundColor: AppTheme.backgroundColor,
-                  elevation: 0,
-                  floating: true,
-                  title: Text('Furniture Shop', style: AppTheme.headingMedium),
-                  actions: [
-                    IconButton(
-                      icon: Icon(Icons.shopping_cart_outlined),
-                      onPressed: () {
-                        // Navigate to cart
-                      },
+            if (!isConnected) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.wifi_off, size: 64, color: Colors.grey),
+                    SizedBox(height: 16),
+                    Text(
+                      'No internet connection',
+                      style: TextStyle(fontSize: 18),
                     ),
-                    // Fix Database button
-                    IconButton(
-                      icon: Icon(Icons.build_circle, color: Colors.orange),
+                    SizedBox(height: 16),
+                    ElevatedButton(
                       onPressed: () async {
-                        // Show loading dialog
-                        showDialog(
-                          context: context,
-                          barrierDismissible: false,
-                          builder:
-                              (ctx) => AlertDialog(
-                                title: Text('Fixing Database'),
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    CircularProgressIndicator(),
-                                    SizedBox(height: 16),
-                                    Text(
-                                      'Fixing featured products in database...',
-                                    ),
-                                  ],
-                                ),
-                              ),
-                        );
-
-                        // Run fix
-                        FirebaseService firebaseService = FirebaseService();
-                        await firebaseService.fixAllProductsFeaturedStatus();
-
-                        // Force refresh the featured products
-                        await productProvider.fetchFeaturedProducts();
-
-                        // Close loading dialog
-                        Navigator.of(context).pop();
-
-                        // Show results dialog
-                        showDialog(
-                          context: context,
-                          builder:
-                              (ctx) => AlertDialog(
-                                title: Text('Database Fix Complete'),
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'All products have been checked and fixed.',
-                                    ),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'Featured Products: ${productProvider.featuredProducts.length}',
-                                    ),
-                                    SizedBox(height: 16),
-                                    Text('What to do next:'),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      '1. Check if featured products appear now',
-                                    ),
-                                    Text(
-                                      '2. If not, try adding a new product and mark it as featured',
-                                    ),
-                                    Text(
-                                      '3. Restart the app to refresh all data',
-                                    ),
-                                  ],
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.of(ctx).pop(),
-                                    child: Text('OK'),
-                                  ),
-                                ],
-                              ),
-                        );
+                        await connectivityProvider.checkConnectivity();
+                        if (connectivityProvider.hasConnection) {
+                          _refreshData();
+                        }
                       },
-                    ),
-                    // Debug button
-                    IconButton(
-                      icon: Icon(Icons.bug_report, color: Colors.red),
-                      onPressed: () async {
-                        // Show loading dialog
-                        showDialog(
-                          context: context,
-                          barrierDismissible: false,
-                          builder:
-                              (ctx) => AlertDialog(
-                                title: Text('Debugging Products'),
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    CircularProgressIndicator(),
-                                    SizedBox(height: 16),
-                                    Text('Checking products in database...'),
-                                  ],
-                                ),
-                              ),
-                        );
-
-                        // Run debug function
-                        await productProvider.debugCheckProducts();
-
-                        // Force refresh the featured products
-                        await productProvider.fetchFeaturedProducts();
-
-                        // Close loading dialog
-                        Navigator.of(context).pop();
-
-                        // Show results dialog
-                        showDialog(
-                          context: context,
-                          builder:
-                              (ctx) => AlertDialog(
-                                title: Text('Featured Products Debug'),
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'Debug complete! Check console output.',
-                                    ),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'Featured Products: ${productProvider.featuredProducts.length}',
-                                    ),
-                                    SizedBox(height: 16),
-                                    Text('If you still don\'t see products:'),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      '1. Make sure products are marked as "Featured"',
-                                    ),
-                                    Text(
-                                      '2. Try adding a new product and mark it as featured',
-                                    ),
-                                    Text(
-                                      '3. Restart the app after adding products',
-                                    ),
-                                  ],
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.of(ctx).pop(),
-                                    child: Text('OK'),
-                                  ),
-                                ],
-                              ),
-                        );
-                      },
+                      child: const Text('Retry'),
                     ),
                   ],
                 ),
+              );
+            }
 
-                // Welcome Message
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTheme.spacing_l,
-                      vertical: AppTheme.spacing_m,
+            if (isLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (hasError) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Error: ${productProvider.errorMessage}',
+                      style: const TextStyle(color: Colors.red),
+                      textAlign: TextAlign.center,
                     ),
-                    child: Consumer<AuthProvider>(
-                      builder: (context, authProvider, child) {
-                        final greeting =
-                            authProvider.isAuthenticated
-                                ? 'Welcome back, ${authProvider.userData?.fullName.split(' ').first ?? 'User'}!'
-                                : 'Discover your dream furniture';
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _refreshData,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              );
+            }
 
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(greeting, style: AppTheme.headingMedium),
-                            SizedBox(height: AppTheme.spacing_xs),
-                            Text(
-                              'Find the perfect pieces for your home',
-                              style: AppTheme.bodyMedium.copyWith(
-                                color: AppTheme.textSecondaryColor,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
+            return SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Banner
+                  _buildBanner(),
+
+                  // Categories
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
+                    child: Text(
+                      'Categories',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
 
-                // Featured Products
-                SliverToBoxAdapter(
-                  child: SectionHeader(
-                    title: 'Featured Products',
-                    actionText: 'See All',
-                    onActionTap: () {
-                      // Navigate to all products
-                    },
-                  ),
-                ),
+                  _buildCategoriesSection(productProvider.categories),
 
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 280,
-                    child:
-                        featuredProducts.isEmpty
-                            ? Center(
-                              child: Text(
-                                'No featured products found. Mark products as featured in the admin panel.',
-                                style: AppTheme.bodyMedium,
-                                textAlign: TextAlign.center,
+                  // Featured Products
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Featured Products',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            // View all featured products
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('View all featured products'),
                               ),
-                            )
-                            : ListView.builder(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: AppTheme.spacing_m,
-                              ),
-                              scrollDirection: Axis.horizontal,
-                              itemCount: featuredProducts.length,
-                              itemBuilder: (context, index) {
-                                final product = featuredProducts[index];
-                                return Container(
-                                  width: 200,
-                                  margin: EdgeInsets.only(
-                                    right: AppTheme.spacing_m,
-                                  ),
-                                  child: ProductCard(
-                                    id: product.id,
-                                    name: product.name,
-                                    imageUrl: product.imageUrls.first,
-                                    price: product.price,
-                                    rating: product.rating,
-                                    isFavorite:
-                                        false, // Need to implement check
-                                    onFavoriteToggle: () async {
-                                      final authProvider =
-                                          Provider.of<AuthProvider>(
-                                            context,
-                                            listen: false,
-                                          );
-
-                                      if (!authProvider.isAuthenticated) {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Please login to add items to wishlist',
-                                            ),
-                                          ),
-                                        );
-                                        return;
-                                      }
-
-                                      // Toggle wishlist
-                                      await productProvider.addToWishlist(
-                                        product.id,
-                                      );
-                                    },
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder:
-                                              (context) => ProductDetailPage(
-                                                productId: product.id,
-                                              ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                );
-                              },
-                            ),
-                  ),
-                ),
-
-                // Categories
-                SliverToBoxAdapter(
-                  child: SectionHeader(
-                    title: 'Categories',
-                    actionText: 'See All',
-                    onActionTap: () {
-                      // Navigate to all categories
-                    },
-                  ),
-                ),
-
-                SliverPadding(
-                  padding: EdgeInsets.symmetric(horizontal: AppTheme.spacing_m),
-                  sliver: SliverGrid(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: AppTheme.spacing_m,
-                      crossAxisSpacing: AppTheme.spacing_m,
-                      childAspectRatio: 0.85,
+                            );
+                          },
+                          child: const Text('View All'),
+                        ),
+                      ],
                     ),
-                    delegate: SliverChildBuilderDelegate((
-                      BuildContext context,
-                      int index,
-                    ) {
-                      if (index >= categories.length) return null;
-
-                      final category = categories[index];
-                      return CategoryCard(
-                        name: category.name,
-                        imageUrl: category.imageUrl,
-                        color: category.color,
-                        itemCount: category.itemCount,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder:
-                                  (context) => CategoryPage(category: category),
-                            ),
-                          );
-                        },
-                      );
-                    }, childCount: categories.length),
                   ),
-                ),
 
-                // Bottom Padding
-                SliverToBoxAdapter(
-                  child: SizedBox(height: AppTheme.spacing_xl),
-                ),
-              ],
+                  _buildFeaturedProductsSection(
+                    productProvider.featuredProducts,
+                  ),
+
+                  // Spacer at bottom
+                  const SizedBox(height: 24),
+                ],
+              ),
             );
           },
+        ),
+      ),
+      // Only show add product button for admin users
+      floatingActionButton:
+          isAdmin
+              ? FloatingActionButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AddProductScreen(),
+                    ),
+                  ).then((_) => _refreshData());
+                },
+                backgroundColor: AppTheme.primaryColor,
+                child: const Icon(Icons.add),
+              )
+              : null,
+    );
+  }
+
+  Widget _buildBanner() {
+    return Container(
+      height: 180,
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.primaryColor, AppTheme.secondaryColor],
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -20,
+            bottom: -20,
+            child: Opacity(
+              opacity: 0.2,
+              child: Image.asset('assets/1.png', height: 180),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Summer Sale',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Up to 50% off on select items',
+                  style: TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                const Spacer(),
+                ElevatedButton(
+                  onPressed: () {
+                    // Sale page navigation
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Sale page coming soon')),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppTheme.primaryColor,
+                  ),
+                  child: const Text('Shop Now'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoriesSection(List<CategoryModel> categories) {
+    return SizedBox(
+      height: 120,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        scrollDirection: Axis.horizontal,
+        itemCount: categories.length,
+        itemBuilder: (context, index) {
+          final category = categories[index];
+          return _buildCategoryItem(category);
+        },
+      ),
+    );
+  }
+
+  Widget _buildCategoryItem(CategoryModel category) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProductListScreen(category: category.name),
+          ),
+        );
+      },
+      child: Container(
+        width: 100,
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Category image/icon
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: category.color.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: ClipOval(
+                child: Image.asset(
+                  category.imageUrl,
+                  width: 30,
+                  height: 30,
+                  errorBuilder:
+                      (context, error, stackTrace) =>
+                          Icon(Icons.category, size: 30, color: category.color),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Category name
+            Text(
+              category.name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeaturedProductsSection(List<ProductModel> products) {
+    if (products.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text('No featured products available'),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 220,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        scrollDirection: Axis.horizontal,
+        itemCount: products.length,
+        itemBuilder: (context, index) {
+          final product = products[index];
+          return _buildFeaturedProductItem(product);
+        },
+      ),
+    );
+  }
+
+  Widget _buildFeaturedProductItem(ProductModel product) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProductDetailScreen(productId: product.id),
+          ),
+        );
+      },
+      child: Container(
+        width: 160,
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Product image
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                height: 140,
+                width: double.infinity,
+                child: FutureBuilder<dynamic>(
+                  future: product.getFirstImage(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (snapshot.hasError ||
+                        !snapshot.hasData ||
+                        snapshot.data == null) {
+                      return Container(
+                        color: Colors.grey[200],
+                        child: const Center(
+                          child: Icon(
+                            Icons.image_not_supported,
+                            size: 40,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      );
+                    }
+
+                    return Image.file(snapshot.data, fit: BoxFit.cover);
+                  },
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // Product name
+            Text(
+              product.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 4),
+
+            // Product price
+            Text(
+              '\$${product.price.toStringAsFixed(2)}',
+              style: TextStyle(
+                color: AppTheme.primaryColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
       ),
     );
